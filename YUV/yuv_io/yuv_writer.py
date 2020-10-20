@@ -1,23 +1,22 @@
+from abc import ABC
+
+from yuv_io.yuv_io import YuvIO
 from .common.seq import Sequence, Frame
-from typing import BinaryIO, Optional
-import os
-import numpy as np
 
 
-class YuvWriter(object):
+class YuvWriter(YuvIO, ABC):
     def __init__(self, seq: Sequence, append: bool = False):
-        self.sequence: Sequence = seq
-        self.append: bool = append
-        self.fp: Optional[BinaryIO] = None
-
-    def open(self):
-        if self.fp is None:
-            if self.append:
-                self.fp: BinaryIO = open(self.sequence.full_name(), "ab")
-            else:
-                self.fp: BinaryIO = open(self.sequence.full_name(), "wb+")
+        if append:
+            super().__init__(seq, "ab")
+        else:
+            super().__init__(seq, "wb+")
 
     def write(self, frame: Frame):
+        """
+        向文件写入一帧图像
+        :param frame:
+        :return:
+        """
         if self.fp is None:
             self.open()
         frame.buff_y.tofile(self.fp)
