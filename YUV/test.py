@@ -1,30 +1,48 @@
-from yuv_io.yuv_reader import YuvReader
-from yuv_io.yuv_writer import YuvWriter
-from yuv_io.common.seq import Sequence
-from yuv_io.common.com_def import Format, BitDepth
+from yuv_io.yuv_io import YuvReader
+from yuv_io.yuv_io import YuvWriter
+from common.com_def import Sequence, Region
+from common.com_def import Format, BitDepth
+from yuv_tools.tools import Cut, Concat
 
 
-class Test():
-    def __init__(self, i):
-        self.i = i
-
-    x = property(lambda self: self.i, lambda self, i: None, doc="Hello World")
-
-
-def main():
+def test_io():
     yuv_dir = r"G:\AVS3_Test_Sequences"
     name = r"MarketPlace_1920x1080_60fps_10bit_420.yuv"
     name_new = r"new_MarketPlace_1920x1080_60fps_10bit_420.yuv"
-    seq = Sequence(yuv_dir, name, 1920, 1080, Format.YUV420, BitDepth.BitDepth10, 60)
-    seq_new = Sequence(yuv_dir, name_new, 1920, 1080, Format.YUV420, BitDepth.BitDepth10, 60)
+    seq = Sequence(yuv_dir, name, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
+    seq_new = Sequence(yuv_dir, name_new, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
 
-    reader = YuvReader(seq)
-    writer = YuvWriter(seq_new, append=False)
-    for frame in reader:
-        # writer.write(frame)
-        r = frame.roi(0, 0, 100000, 600000)
-        print(r.buff_y.shape)
-        break
+    def do_read_write(append):
+        reader = YuvReader(seq)
+        writer = YuvWriter(seq_new, append=append)
+        for frame in reader:
+            writer.write(frame)
+        reader.close()
+        writer.close()
+
+    do_read_write(False)
+    do_read_write(True)
+
+
+def test_tools():
+    yuv_dir = r"G:\AVS3_Test_Sequences"
+    name = r"MarketPlace_1920x1080_60fps_10bit_420.yuv"
+    name_new = r"cut_MarketPlace_1920x1080_60fps_10bit_420.yuv"
+    seq = Sequence(yuv_dir, name, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
+    seq_new = Sequence(yuv_dir, name_new, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
+    region = Region(0, 0, 64, 64)
+    cut = Cut()
+    cut.cut_seq(seq, region, seq_new)
+
+    concat = Concat()
+    seq = Sequence(yuv_dir, name, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
+    seq_new = Sequence(yuv_dir, name_new, 1920, 1080, 60, fmt=Format.YUV420, bit_depth=BitDepth.BitDepth10)
+    concat.concat_seq([seq, seq], seq_new)
+
+
+def main():
+    test_io()
+    test_tools()
 
 
 if __name__ == '__main__':
