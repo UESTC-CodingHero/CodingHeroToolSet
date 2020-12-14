@@ -1,10 +1,9 @@
-import sys
 import re
 import copy
 import optparse
 
-from net import Client, to_json
-from helper import run_cmd
+from core.net import Client, to_json
+from core.helper import run_cmd
 
 # 2个$符号中间的字符串识别为正则表达式
 REGEX_SYM = "$"

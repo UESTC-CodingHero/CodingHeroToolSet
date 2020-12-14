@@ -1,5 +1,5 @@
-from net import ProgressServer
-from helper import run_cmd
+from core.net import ProgressServer
+from core.helper import run_cmd
 
 
 def update_progress(jid, progress, info):
