@@ -10,10 +10,10 @@ setup(name="hpc",
       packages=find_packages(),
       install_requires=["openpyxl"],
       include_package_data=True,
-      package_data={"resource": ["AVS3-CTC-Template.xlsm", "AVS3-SCC-Template.xlsm"]},
+      package_data={"": ["*.xlsm"]},
       exclude_package_data={'': ['README.txt']},
       entry_points={'console_scripts': [
           'progress_server = hpc.app.hpc_master:main',
       ]},
-      platforms="any"
+      platforms="Windows"
       )

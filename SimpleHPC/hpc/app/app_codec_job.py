@@ -7,7 +7,7 @@ from typing import Union, Optional, Type
 from hpc.codec.codec_util import copy_del_rename
 from hpc.codec.codec_util import memory
 from hpc.codec.mode import Mode
-from hpc.codec.parse_log import HpmScanner, Uavs3eScanner
+from hpc.codec.logger_abc import AbsLogScanner
 from hpc.core.helper import mkdir
 from hpc.core.helper import path_join
 from hpc.core.hpc_job import HpcJobManager
@@ -21,17 +21,50 @@ class ProgressDIR(Enum):
     NONE = 2
 
 
-def main(seq_info: list, qp_list: list, mode: Mode,
-         who: str, email: str, hashcode: str,
-         seqs_dir: str, temp_dir: str, workdir: str,
-         bin_dir: str, rec_dir: str, dec_dir: str, stdout_dir: str, stderr_dir: str,
-         gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool,
-         cores: int, nodes: Optional[str], groups: Optional[str], priority: Union[str, int],
-         codec: Union[HpmScanner, Uavs3eScanner, Type[HpmScanner], Type[Uavs3eScanner]],
-         encoder_command: str, merger_command: Optional[str], decoder_command: Optional[str],
-         track: ProgressDIR = ProgressDIR.STDOUT,
-         sampling: int = 1,
-         **extra_param):
+def main_codec(seq_info: list, qp_list: list, mode: Mode,
+               who: str, email: str, hashcode: str,
+               seqs_dir: str, temp_dir: str, workdir: str,
+               bin_dir: str, rec_dir: str, dec_dir: str, stdout_dir: str, stderr_dir: str,
+               gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool,
+               cores: int, nodes: Optional[str], groups: Optional[str], priority: Union[str, int],
+               codec: Union[AbsLogScanner, Type[AbsLogScanner]],
+               encoder_command: str, merger_command: Optional[str], decoder_command: Optional[str],
+               track: ProgressDIR = ProgressDIR.STDOUT,
+               sampling: int = 1,
+               **extra_param):
+    """
+    执行一批编解码任务
+    :param seq_info:
+    :param qp_list:
+    :param mode:
+    :param who:
+    :param email:
+    :param hashcode:
+    :param seqs_dir:
+    :param temp_dir:
+    :param workdir:
+    :param bin_dir:
+    :param rec_dir:
+    :param dec_dir:
+    :param stdout_dir:
+    :param stderr_dir:
+    :param gen_bin:
+    :param gen_rec:
+    :param gen_dec:
+    :param par_enc:
+    :param cores:
+    :param nodes:
+    :param groups:
+    :param priority:
+    :param codec:
+    :param encoder_command:
+    :param merger_command:
+    :param decoder_command:
+    :param track:
+    :param sampling:
+    :param extra_param:
+    :return:
+    """
     KEY_LOCAL = "local"
     local = extra_param.get(KEY_LOCAL) if extra_param.get(KEY_LOCAL) else not HpcJobManager.check_env()
 
@@ -48,7 +81,7 @@ def main(seq_info: list, qp_list: list, mode: Mode,
         if not gen_dec:
             dec_dir = None
             decoder_command = None
-        if not isinstance(codec, HpmScanner) and not codec == HpmScanner:
+        if "hpm" not in str(codec).lower():
             merger_command = None
             par_enc = False
         if merger_command is None:
@@ -77,6 +110,8 @@ def main(seq_info: list, qp_list: list, mode: Mode,
             skip = None
         else:
             return False
+        name = rf"{name}_{width}x{height}_{fps}"
+        extra_param["name"] = name
         mem = memory(width, height)
         for qp in qp_list:
             name_qp = f"{name}_{qp}"
@@ -215,7 +250,7 @@ def main(seq_info: list, qp_list: list, mode: Mode,
                         elif track == ProgressDIR.STDERR:
                             track_file = path_join(get_name(name_qp, -1, prefixes[0], "err"), stderr_dir)
                     Progress.notice(job_id, (frames + sampling - 1) // sampling,
-                                    codec.valid_line_reg, codec.end_line_reg, track_file)
+                                    codec.get_valid_line_reg(), codec.get_end_line_reg(), track_file)
     return job_id_list
 
 

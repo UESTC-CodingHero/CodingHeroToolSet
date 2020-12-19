@@ -6,4 +6,4 @@ class Mode(Enum):
     LDB = "LDB"
     LDP = "LDP"
     RA = "RA"
-    EXTRA = "EXTRA"
+    OTHER = "OTHER"
