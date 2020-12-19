@@ -19,7 +19,7 @@ class HpmScanner(AbsLogScanner):
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(file[-8:-6])
+                record.qp = int(file[-6:-4])
                 with open(os.path.join(self.log_dir, file), "r") as fp:
                     for line in fp:
                         line = line.strip()
@@ -95,7 +95,7 @@ class HMScanner(AbsLogScanner):
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(file[-8:-6])
+                record.qp = int(file[-6:-4])
                 with open(os.path.join(self.log_dir, file), "r") as fp:
                     for line in fp:
                         line = line.strip()
