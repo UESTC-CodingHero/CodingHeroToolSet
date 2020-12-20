@@ -15,6 +15,15 @@ from hpc.core.local_job import JobManager
 from hpc.core.net import Progress
 
 
+class Prefix(Enum):
+    ENCODE = "encode"
+    COPY_REC = ""
+    MERGE = ""
+    DECODE = "decode"
+    COPY_DEC = ""
+    COPY_BIN = ""
+
+
 class ProgressDIR(Enum):
     STDOUT = 0
     STDERR = 1
@@ -151,8 +160,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     if gen_bin:
                         bitstream = get_name(job_name, idx, "bin", "bin")
                         bitstream = path_join(bitstream, temp_dir)
-                        copy_bin_cmd = copy_del_rename(bitstream, bin_dir, get_name(name_qp, idx, "bin", "bin"),
-                                                       local=local)
+                        copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
                     else:
                         bitstream = os.devnull
                         copy_bin_cmd = None
@@ -160,8 +168,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     if gen_rec:
                         reconstruction = get_name(job_name, idx, "rec", "yuv")
                         reconstruction = path_join(reconstruction, temp_dir)
-                        copy_rec_cmd = copy_del_rename(reconstruction, rec_dir, get_name(name_qp, idx, "rec", "yuv"),
-                                                       local=local)
+                        copy_rec_cmd = copy_del_rename(reconstruction, rec_dir, None, local=local)
                     else:
                         reconstruction = os.devnull
                         copy_rec_cmd = None
@@ -186,7 +193,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     t = re.findall(r"-i\s+{}", merger_command)[0]
                     merger_command = merger_command.replace(t, " ".join([t] * len(bitstream_list)))
                     merger_cmd = merger_command.format(*bitstream_list, bitstream)
-                    copy_bin_cmd = copy_del_rename(bitstream, bin_dir, get_name(name_qp, -1, "bin", "bin"), local=local)
+                    copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
                     copy_bin_cmd_list.append(copy_bin_cmd)
                 else:
                     merger_cmd = None
@@ -194,17 +201,19 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     decode = get_name(job_name, -1, "dec", "yuv")
                     decode = path_join(decode, temp_dir)
                     decoder_cmd = decoder_command.format(bitstream, decode)
-                    copy_dec_cmd = copy_del_rename(decode, dec_dir, get_name(name_qp, -1, "dec", "yuv"), local=local)
+                    copy_dec_cmd = copy_del_rename(decode, dec_dir, None, local=local)
                 else:
                     decoder_cmd = None
                     copy_dec_cmd = None
 
                 depend = []
                 # encode copy_rec merge decode copy_dec copy_bin
-                prefixes = ["encode", "", "", "decode", "", ""]
+                prefixes = [Prefix.ENCODE, Prefix.COPY_REC, Prefix.MERGE, Prefix.DECODE,
+                            Prefix.COPY_DEC, Prefix.COPY_BIN]
                 commands = [encoder_cmd_list, copy_rec_cmd_list, merger_cmd, decoder_cmd,
                             copy_dec_cmd, copy_bin_cmd_list]
                 for i, (prefix, cmd) in enumerate(zip(prefixes, commands)):
+                    prefix = prefix.value
                     if isinstance(cmd, str):
                         if prefix is None or len(prefix) == 0:
                             stdout = None

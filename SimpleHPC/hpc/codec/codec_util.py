@@ -19,7 +19,7 @@ if sys.platform == "win32":
         else:
             current_cmd = rf"del {src}"
             dst_file = src
-        if new_name is not None:
+        if new_name is not None and len(new_name) > 0:
             current_cmd = f"{current_cmd} & rename {dst_file} {new_name}"
         if not local:
             current_cmd = current_cmd.replace("&", "^&")

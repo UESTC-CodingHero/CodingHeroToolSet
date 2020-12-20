@@ -1,26 +1,33 @@
-import re
 import os
-from hpc.core.helper import rmdir
+import re
+
 from hpc.codec.logger_abc import AbsLogScanner, Record
 from hpc.codec.mode import Mode
+from hpc.core.helper import rmdir
 
 
 class HpmScanner(AbsLogScanner):
-    def scan(self, filter_func=None, rm_log=False):
-        files = os.listdir(self.log_dir)
-        if callable(filter_func):
-            files = filter(filter_func, files)
+    def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
+        enc_files = os.listdir(self.enc_log_dir)
+        if callable(filter_func_enc):
+            enc_files = list(filter(filter_func_enc, enc_files))
+        dec_files = os.listdir(self.dec_log_dir)
+        if callable(filter_func_dec):
+            dec_files = list(filter(filter_func_dec, dec_files))
+        if len(dec_files) != len(enc_files):
+            dec_files = [""] * len(enc_files)
         # TODO do merge first
         if self.is_separate:
             for seq in self.seqs:
                 pass
-        for file in files:
-            _id, name = self._in_dict(file)
+
+        for enc_file, dec_file in zip(enc_files, dec_files):
+            _id, name = self._in_dict(enc_file)
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(file[-6:-4])
-                with open(os.path.join(self.log_dir, file), "r") as fp:
+                record.qp = int(enc_file[-6:-4])
+                with open(os.path.join(self.enc_log_dir, enc_file), "r") as fp:
                     for line in fp:
                         line = line.strip()
                         if "PSNR Y(dB)" in line:
@@ -35,9 +42,13 @@ class HpmScanner(AbsLogScanner):
                             sp = line.strip("Total encoding time").strip().strip("=").strip().split(" ")
                             record.encode_time = float(sp[2])
                             break
+                record.decode_time = \
+                    self._get_decode_time(dec_file,
+                                          r"\s*total decoding time\s+=\s*\d+\s*msec,\s*(\d+\.\d+)\s*sec",
+                                          enc_file)
                 self._add_record(record)
         if rm_log:
-            rmdir(self.log_dir)
+            rmdir(self.enc_log_dir)
         self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
         return self.records
 
@@ -52,29 +63,31 @@ class HpmScanner(AbsLogScanner):
 
 
 class Uavs3eScanner(HpmScanner):
-    def scan(self, filter_func=None, rm_log=False):
-        file = os.path.join(self.log_dir, "psnr.txt")
-        assert os.path.exists(file)
-        with open(file, "r") as fp:
-            for line in fp:
-                matched = re.match(r"(\S+) {4}(\S+) (\S+) (\S+) (\S+) {4}(\S+) (\S+) (\S+) {4}(\S+)", line)
-                assert matched is not None
-                if matched:
-                    file_name = matched.group(1)
-                    _id, name = self._in_dict(file_name)
-                    assert name is not None
-                    record = Record(_id, self.mode, name)
-                    record.qp = int(file_name[-6:-4])
-                    record.bitrate = float(matched.group(2))
-                    record.psnr_y = float(matched.group(3))
-                    record.psnr_u = float(matched.group(4))
-                    record.psnr_v = float(matched.group(5))
-                    record.encode_time = float(matched.group(9))
-                    self._add_record(record)
-        if rm_log:
-            rmdir(file)
-        self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
-        return self.records
+    def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
+        # file = os.path.join(self.enc_log_dir, "psnr.txt")
+        # assert os.path.exists(file)
+        # with open(file, "r") as fp:
+        #     for line in fp:
+        #         matched = re.match(r"(\S+) {4}(\S+) (\S+) (\S+) (\S+) {4}(\S+) (\S+) (\S+) {4}(\S+)", line)
+        #         assert matched is not None
+        #         if matched:
+        #             file_name = matched.group(1)
+        #             _id, name = self._in_dict(file_name)
+        #             assert name is not None
+        #             record = Record(_id, self.mode, name)
+        #             record.qp = int(file_name[-6:-4])
+        #             record.bitrate = float(matched.group(2))
+        #             record.psnr_y = float(matched.group(3))
+        #             record.psnr_u = float(matched.group(4))
+        #             record.psnr_v = float(matched.group(5))
+        #             record.encode_time = float(matched.group(9))
+        #             self._add_record(record)
+        # if rm_log:
+        #     rmdir(file)
+        # self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
+        # return self.records
+        self.is_separate = False
+        return super().scan(filter_func_enc, filter_func_dec, rm_log)
 
     @staticmethod
     def get_valid_line_reg():
@@ -86,17 +99,22 @@ class Uavs3eScanner(HpmScanner):
 
 
 class HMScanner(AbsLogScanner):
-    def scan(self, filter_func=None, rm_log=False):
-        files = os.listdir(self.log_dir)
-        if callable(filter_func):
-            files = filter(filter_func, files)
-        for file in files:
-            _id, name = self._in_dict(file)
+    def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
+        enc_files = os.listdir(self.enc_log_dir)
+        if callable(filter_func_enc):
+            enc_files = list(filter(filter_func_enc, enc_files))
+        dec_files = os.listdir(self.dec_log_dir)
+        if callable(filter_func_dec):
+            dec_files = list(filter(filter_func_dec, dec_files))
+        if len(dec_files) != len(enc_files):
+            dec_files = [""] * len(enc_files)
+        for enc_file, dec_file in zip(enc_files, dec_files):
+            _id, name = self._in_dict(enc_file)
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(file[-6:-4])
-                with open(os.path.join(self.log_dir, file), "r") as fp:
+                record.qp = int(enc_file[-6:-4])
+                with open(os.path.join(self.enc_log_dir, enc_file), "r") as fp:
                     for line in fp:
                         line = line.strip()
                         m = re.match(r"\s*(\d+)\s+a\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)",
@@ -111,9 +129,14 @@ class HMScanner(AbsLogScanner):
                         if m:
                             record.encode_time = float(m.group(1))
                             break
+
+                record.decode_time = self._get_decode_time(dec_file,
+                                                           r"\s*Total Time:\s+(\d+\.\d+)\s*sec.",
+                                                           enc_file)
+
                 self._add_record(record)
         if rm_log:
-            rmdir(self.log_dir)
+            rmdir(self.enc_log_dir)
         self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
         return self.records
 
@@ -128,43 +151,52 @@ class HMScanner(AbsLogScanner):
         return r"SUMMARY --------------------------------------------------------"
 
 
-class Scanner(object):
-    def __init__(self,
-                 log_dir: str,
-                 seqs: list,
-                 mode: Mode,
-                 scanner: str = None,
-                 output_excel: str = None,
-                 template: str = None,
-                 is_anchor: bool = False,
-                 is_parallel: bool = False):
-        """
-        :param log_dir: 日志目录
-        :param seqs: 要扫描的日志名称简写
-        :param mode: 模式，"AI"\"LDB"\"LDP"\"RA"之一，用于决定excel表中的sheet
-        :param scanner: Scanner的名称，目前支持"HPM"\"UAVS3E"
-        :param output_excel: 指定输出的excel表格的名称
-        :param template: 指定excel表格模板的名称
-        :param is_anchor: 指定当前数据是否是anchor，用于决定Excel中sheet
-        :param is_parallel: 指定当前日志是否是并行编码的，仅适用于HPM分片编码
-        """
-        if scanner is None:
-            scanner = HpmScanner.__name__.lower()
-        if scanner.lower() in HpmScanner.__name__.lower():
-            self.scanner: AbsLogScanner = HpmScanner(log_dir, seqs, mode, output_excel, template, is_anchor,
-                                                     is_parallel)
-        else:
-            is_parallel = False
-            self.scanner: AbsLogScanner = Uavs3eScanner(log_dir, seqs, mode, output_excel, template, is_anchor,
-                                                        is_parallel)
+# class Scanner(object):
+#     def __init__(self,
+#                  enc_log_dir: str,
+#                  dec_log_dir: str,
+#                  seqs: list,
+#                  mode: Mode,
+#                  scanner: str = None,
+#                  output_excel: str = None,
+#                  template: str = None,
+#                  is_anchor: bool = False,
+#                  is_parallel: bool = False):
+#         """
+#         :param enc_log_dir: 编码日志目录
+#         :param dec_log_dir: 解码日志目录
+#         :param seqs: 要扫描的日志名称简写
+#         :param mode: 模式，"AI"\"LDB"\"LDP"\"RA"之一，用于决定excel表中的sheet
+#         :param scanner: Scanner的名称，目前支持"HPM"\"UAVS3E"
+#         :param output_excel: 指定输出的excel表格的名称
+#         :param template: 指定excel表格模板的名称
+#         :param is_anchor: 指定当前数据是否是anchor，用于决定Excel中sheet
+#         :param is_parallel: 指定当前日志是否是并行编码的，仅适用于HPM分片编码
+#         """
+#         if scanner is None:
+#             scanner = HpmScanner.__name__.lower()
+#         if scanner.lower() in HpmScanner.__name__.lower():
+#             self.scanner: AbsLogScanner = HpmScanner(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template,
+#                                                      is_anchor, is_parallel)
+#         else:
+#             is_parallel = False
+#             self.scanner: AbsLogScanner = Uavs3eScanner(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template,
+#                                                         is_anchor, is_parallel)
+#
+#     def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
+#         """
+#         :param filter_func_enc: 用于过滤文件夹中的非目标编码日志文件
+#         :param filter_func_dec: 用于过滤文件夹中的非目标解码日志文件
+#         :param rm_log: 当扫描完成时，是否删除log文件
+#         :return: 字典列表
+#         """
+#         return self.scanner.scan(filter_func_enc, filter_func_dec, rm_log)
+#
+#     def output(self):
+#         self.scanner.output()
 
-    def scan(self, filter_func: callable = None, rm_log=False):
-        """
-        :param filter_func: 用于过滤文件夹中的非目标文件
-        :param rm_log: 当扫描完成时，是否删除log文件
-        :return: 字典列表
-        """
-        return self.scanner.scan(filter_func, rm_log)
 
-    def output(self):
-        self.scanner.output()
+class SupportCodec:
+    HPM = HpmScanner
+    UAVS3 = Uavs3eScanner
+    HM = HMScanner

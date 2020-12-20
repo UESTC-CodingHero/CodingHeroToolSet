@@ -13,7 +13,7 @@ setup(name="hpc",
       package_data={"": ["*.xlsm"]},
       exclude_package_data={'': ['README.txt']},
       entry_points={'console_scripts': [
-          'progress_server = hpc.app.hpc_master:main',
+          'progress_server = hpc.app.app_master:main',
       ]},
       platforms="Windows"
       )

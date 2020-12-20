@@ -12,12 +12,13 @@
 
 """
 import os
-
-from hpc.codec.mode import Mode
+import re
 import openpyxl as op
 from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from abc import ABCMeta
+from hpc.codec.mode import Mode
+from typing import Optional
 
 
 class Record:
@@ -45,14 +46,19 @@ class Record:
 
 
 class AbsLogScanner(metaclass=ABCMeta):
-    def __init__(self, log_dir: str, seqs: list, mode: Mode,
+    def __init__(self,
+                 enc_log_dir: str,
+                 dec_log_dir: Optional[str],
+                 seqs: list,
+                 mode: Mode,
                  output_excel: str = None,
                  template: str = None,
                  is_anchor: bool = False,
                  is_separate: bool = False):
         """
         初始化一个日志扫描器
-        :param log_dir: 日志文件所在的目录
+        :param enc_log_dir: 编码日志文件所在的目录
+        :param dec_log_dir: 解码日志文件所在的目录
         :param seqs: 需要扫描的序列列表，序列的ID由序列在该列表的顺序确定
         :param mode: 当前编码的模式，用于确定在输出excel的位置
         :param output_excel: 输出的excel表格名称
@@ -60,8 +66,9 @@ class AbsLogScanner(metaclass=ABCMeta):
         :param is_anchor: 是否是anchor数据，用于确定在excel中的填充位置
         :param is_separate: 是否为分片编码。TODO：HPM中待实现此功能
         """
-        assert os.path.exists(log_dir)
-        self.log_dir = log_dir
+        assert os.path.exists(enc_log_dir)
+        self.enc_log_dir = enc_log_dir
+        self.dec_log_dir = dec_log_dir
         self.seqs = seqs
         self.mode = mode
         self.out_excel = output_excel
@@ -83,10 +90,24 @@ class AbsLogScanner(metaclass=ABCMeta):
         self.records[record.id].append(record)
         self.records[record.id] = sorted(self.records[record.id], key=lambda r: r.qp)
 
-    def scan(self, filter_func=None, rm_log=False):
+    def _get_decode_time(self, dec_file, regex, enc_file=None):
+        dec_time = 0
+        if self.dec_log_dir is not None and dec_file is not None and len(dec_file) > 0:
+            if enc_file is not None:
+                assert self._in_dict(dec_file) == self._in_dict(enc_file)
+            with open(os.path.join(self.dec_log_dir, dec_file), "r") as fp:
+                for line in fp:
+                    m = re.match(regex, line)
+                    if m:
+                        dec_time = float(m.group(1))
+                        break
+        return dec_time
+
+    def scan(self, filter_func_enc=None, filter_func_dec=None, rm_log=False):
         """
         执行扫描任务。从给定的文件夹中，挑选指定的文件进行解析
-        :param filter_func: 过滤掉不关心的文件
+        :param filter_func_enc: 过滤掉不关心的编码日志文件
+        :param filter_func_dec: 过滤掉不关心的解码日志文件
         :param rm_log: 扫描结束后是否删除log原始文件
         :return: 字典。key为所在序列的ID，value为当前序列对应的不同QP下的Record列表
         """

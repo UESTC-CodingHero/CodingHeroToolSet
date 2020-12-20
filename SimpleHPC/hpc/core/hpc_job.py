@@ -61,9 +61,18 @@ class HpcJobManager(object):
     @staticmethod
     def __filter_params(kd, kwargs):
         cmd = ""
-        for k, v in kwargs.items():
-            if k in kd and v is not None and len(str(v)) > 0 and v != os.devnull:
-                cmd += f" /{k}:{v}"
+        for valid_key in kd:
+            if len(kwargs) == 0:
+                break
+
+            if isinstance(valid_key, list):
+                for key in valid_key:
+                    if key in kwargs.keys():
+                        cmd += f" /{key}:{kwargs.pop(key)}"
+                        break
+            else:
+                if valid_key in kwargs.keys():
+                    cmd += f" /{valid_key}:{kwargs.pop(valid_key)}"
         return cmd
 
     @staticmethod
