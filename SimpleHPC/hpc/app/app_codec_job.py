@@ -250,14 +250,14 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                 if track != ProgressDIR.NONE and not local:
                     if par_enc:
                         if track == ProgressDIR.STDOUT:
-                            track_file = path_join(get_name(name_qp, 0, prefixes[0], "out"), stdout_dir)
+                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "out"), stdout_dir)
                         elif track == ProgressDIR.STDERR:
-                            track_file = path_join(get_name(name_qp, 0, prefixes[0], "err"), stderr_dir)
+                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "err"), stderr_dir)
                     else:
                         if track == ProgressDIR.STDOUT:
-                            track_file = path_join(get_name(name_qp, -1, prefixes[0], "out"), stdout_dir)
+                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "out"), stdout_dir)
                         elif track == ProgressDIR.STDERR:
-                            track_file = path_join(get_name(name_qp, -1, prefixes[0], "err"), stderr_dir)
+                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "err"), stderr_dir)
                     Progress.notice(job_id, (frames + sampling - 1) // sampling,
                                     codec.get_valid_line_reg(), codec.get_end_line_reg(), track_file)
     return job_id_list
