@@ -2,11 +2,41 @@ import os
 import re
 
 from hpc.codec.logger_abc import AbsLogScanner, Record
-from hpc.codec.mode import Mode
 from hpc.core.helper import rmdir
 
 
 class HpmScanner(AbsLogScanner):
+    def _scan_a_file(self, abs_path):
+        file = os.path.basename(abs_path)
+        _id, name = self._in_dict(file)
+        assert name is not None
+        record = Record(_id, self.mode, name)
+        if self.is_separate:
+            record.qp = int(file.split("_")[-2])
+        else:
+            record.qp = int(file.split("_")[-1].split(".")[0])
+        with open(os.path.join(abs_path), "r") as fp:
+            for line in fp:
+                line = line.strip()
+                if "PSNR Y(dB)" in line:
+                    record.psnr_y = float(line.split(":")[1].strip())
+                elif "PSNR U(dB)" in line:
+                    record.psnr_u = float(line.split(":")[1].strip())
+                elif "PSNR V(dB)" in line:
+                    record.psnr_v = float(line.split(":")[1].strip())
+                elif "MsSSIM_Y" in line:
+                    record.ssim_y = float(line.split(":")[1].strip())
+                elif "Total bits(bits)" in line:
+                    record.bits = int(line.split(":")[1].strip())
+                elif "bitrate(kbps)" in line:
+                    record.bitrate = float(line.split(":")[1].strip())
+                elif "Encoded frame count" in line:
+                    record.frames = int(line.split("=")[1].strip())
+                elif "Total encoding time" in line:
+                    sp = line.split("=")[1].strip().split(" ")
+                    record.encode_time = float(sp[2])
+        return record
+
     def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
         enc_files = os.listdir(self.enc_log_dir)
         if callable(filter_func_enc):
@@ -18,35 +48,52 @@ class HpmScanner(AbsLogScanner):
             dec_files = [""] * len(enc_files)
         # TODO do merge first
         if self.is_separate:
-            for seq in self.seqs:
-                pass
+            enc_files = list(filter(lambda fn: len(re.findall(r"\d+x\d+_\d+\S*_\d+_\d+\.\S+", fn)) > 0, enc_files))
+            for _id, seq in enumerate(self.seqs):
+                cur_seq_log_files = [f for f in enc_files if seq in f]
+                # key is qp, value is file list
+                temp_dict = dict()
+                for file in cur_seq_log_files:
+                    qp = int(file.split("_")[-2])
+                    qp_files = temp_dict.get(qp) or list()
+                    qp_files.append(file)
+                    qp_files.sort(key=lambda fn: int(str(fn).split("-")[-1].split(".")[0]))
+                    temp_dict[qp] = qp_files
+                for qp, files in temp_dict.items():
+                    record = Record(_id, self.mode, seq)
+                    record.qp = qp
+                    record.frames = 0
+                    record.psnr_y = 0
+                    record.psnr_u = 0
+                    record.psnr_v = 0
+                    record.bitrate = 0
+                    record.bits = 0
+                    record.encode_time = 0
+                    record.decode_time = 0
+                    record.ssim_y = 0
+                    records = [self._scan_a_file(os.path.join(self.enc_log_dir, f)) for f in files]
+                    for r in records:
+                        assert r.qp == qp
+                        record.frames += r.frames
+                        record.psnr_y += r.psnr_y * r.frames
+                        record.psnr_u += r.psnr_u * r.frames
+                        record.psnr_v += r.psnr_v * r.frames
+                        record.ssim_y += r.ssim_y * r.frames
+                        record.bitrate += r.bitrate * r.frames
+                        record.bits += r.bits
+                        record.encode_time += r.encode_time
 
-        for enc_file, dec_file in zip(enc_files, dec_files):
-            _id, name = self._in_dict(enc_file)
-            assert name is not None
-            if name is not None:
-                record = Record(_id, self.mode, name)
-                record.qp = int(enc_file[-6:-4])
-                with open(os.path.join(self.enc_log_dir, enc_file), "r") as fp:
-                    for line in fp:
-                        line = line.strip()
-                        if "PSNR Y(dB)" in line:
-                            record.psnr_y = float(line.strip("PSNR Y(dB)").strip().strip(":").strip())
-                        elif "PSNR U(dB)" in line:
-                            record.psnr_u = float(line.strip("PSNR U(dB)").strip().strip(":").strip())
-                        elif "PSNR V(dB)" in line:
-                            record.psnr_v = float(line.strip("PSNR V(dB)").strip().strip(":").strip())
-                        elif "bitrate(kbps)" in line:
-                            record.bitrate = float(line.strip("bitrate(kbps)").strip().strip(":").strip())
-                        elif "Total encoding time" in line:
-                            sp = line.strip("Total encoding time").strip().strip("=").strip().split(" ")
-                            record.encode_time = float(sp[2])
-                            break
-                record.decode_time = \
-                    self._get_decode_time(dec_file,
-                                          r"\s*total decoding time\s+=\s*\d+\s*msec,\s*(\d+\.\d+)\s*sec",
-                                          enc_file)
-                self._add_record(record)
+        else:
+            for enc_file, dec_file in zip(enc_files, dec_files):
+                _id, name = self._in_dict(enc_file)
+                assert name is not None
+                if name is not None:
+                    record = self._scan_a_file(os.path.join(self.enc_log_dir, enc_file))
+                    record.decode_time = \
+                        self._get_decode_time(dec_file,
+                                              r"\s*total decoding time\s+=\s*\d+\s*msec,\s*(\d+\.\d+)\s*sec",
+                                              enc_file)
+                    self._add_record(record)
         if rm_log:
             rmdir(self.enc_log_dir)
         self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
@@ -64,28 +111,6 @@ class HpmScanner(AbsLogScanner):
 
 class Uavs3eScanner(HpmScanner):
     def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
-        # file = os.path.join(self.enc_log_dir, "psnr.txt")
-        # assert os.path.exists(file)
-        # with open(file, "r") as fp:
-        #     for line in fp:
-        #         matched = re.match(r"(\S+) {4}(\S+) (\S+) (\S+) (\S+) {4}(\S+) (\S+) (\S+) {4}(\S+)", line)
-        #         assert matched is not None
-        #         if matched:
-        #             file_name = matched.group(1)
-        #             _id, name = self._in_dict(file_name)
-        #             assert name is not None
-        #             record = Record(_id, self.mode, name)
-        #             record.qp = int(file_name[-6:-4])
-        #             record.bitrate = float(matched.group(2))
-        #             record.psnr_y = float(matched.group(3))
-        #             record.psnr_u = float(matched.group(4))
-        #             record.psnr_v = float(matched.group(5))
-        #             record.encode_time = float(matched.group(9))
-        #             self._add_record(record)
-        # if rm_log:
-        #     rmdir(file)
-        # self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
-        # return self.records
         self.is_separate = False
         return super().scan(filter_func_enc, filter_func_dec, rm_log)
 
@@ -113,7 +138,7 @@ class HMScanner(AbsLogScanner):
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(enc_file[-6:-4])
+                record.qp = int(enc_file.split("_")[-1].split(".")[0])
                 with open(os.path.join(self.enc_log_dir, enc_file), "r") as fp:
                     for line in fp:
                         line = line.strip()

@@ -22,8 +22,18 @@ from typing import Optional
 
 
 class Record:
+    """
+    关于编码信息的一个记录，用于填充BD-rate表
+    """
+
     def __init__(self, _id: int, mode: Mode, name: str):
-        self.id = _id
+        """
+        初始化一个记录
+        :param _id: 当前记录的序列的ID
+        :param mode: 当前记录所属的编码模式
+        :param name: 当前记录所属的序列简称
+        """
+        self._id = _id
         self.mode = mode
         self.name = name
         self.qp = 0
@@ -33,8 +43,16 @@ class Record:
         self.bitrate = 0
         self.encode_time = 0
         self.decode_time = 0
+        # extra info
+        self.frames = 0
+        self.bits = 0
+        self.ssim_y = 0
 
     def loc(self):
+        """
+        用于定位当前记录在excel中的行位置
+        :return:
+        """
         return "_".join([str(self.mode), str(self.name), str(self.qp)])
 
     def __str__(self):
@@ -84,13 +102,24 @@ class AbsLogScanner(metaclass=ABCMeta):
         return None
 
     def _add_record(self, record: Record):
+        """
+        统一管理，将一个新的记录添加到成员变量中
+        :param record: 新的记录
+        """
         # 此处已经根据ID排序
-        if self.records.get(record.id) is None:
-            self.records[record.id] = list()
-        self.records[record.id].append(record)
-        self.records[record.id] = sorted(self.records[record.id], key=lambda r: r.qp)
+        recodes_list = self.records.get(record._id) or list()
+        recodes_list.append(record)
+        recodes_list.sort(key=lambda r: r.qp)
+        self.records[record._id] = recodes_list
 
-    def _get_decode_time(self, dec_file, regex, enc_file=None):
+    def _get_decode_time(self, dec_file: str, regex: str, enc_file: Optional[str] = None):
+        """
+        从解码文件中获取解码时间
+        :param dec_file: 解码日志文件
+        :param regex: 正则表达式，该表达式的group(1)指向解码时间字符串
+        :param enc_file: 该解码文件对应的编码文件，如果不为None，则使用该文件验证一下二者所属的序列ID是否一致
+        :return: 解码时间
+        """
         dec_time = 0
         if self.dec_log_dir is not None and dec_file is not None and len(dec_file) > 0:
             if enc_file is not None:
@@ -114,6 +143,10 @@ class AbsLogScanner(metaclass=ABCMeta):
         raise NotImplemented
 
     def output(self):
+        """
+        将扫描到的记录全部输出到屏幕
+        如果指定了template，同时会输出到Excel，并保存到out_excel, 如果未指定out_excel，则输出到以当前目录为名的excel表格中
+        """
         if self.template is None or not os.path.exists(self.template):
             for name, records4 in self.records.items():
                 records4 = sorted(records4, key=lambda r: int(r.qp))
@@ -128,9 +161,10 @@ class AbsLogScanner(metaclass=ABCMeta):
                     record: Record = record
                     print(record)
                     # fill in the sheet
-                    for index, row in enumerate(sheet.rows):
-                        index += 1
-                        if row[0].value == record.loc():
+                    for index, value in enumerate(sheet.values()):
+                        if value == record.loc():
+                            # both row and column indexes are started from 1 not 0
+                            index += 1
                             s = 1
                             sheet.cell(index, column=s + 1, value=record.bitrate)
                             sheet.cell(index, column=s + 2, value=record.psnr_y)
@@ -147,8 +181,16 @@ class AbsLogScanner(metaclass=ABCMeta):
 
     @staticmethod
     def get_valid_line_reg():
+        """
+        获取编码日志中，每一个编码帧日志输出的正则表达式，用于更新HPC的进度条
+        :return:
+        """
         raise NotImplemented
 
     @staticmethod
     def get_end_line_reg():
+        """
+        获取编码日志中，每一个序列编码完成时的正则表达式，用于结束HPC进度条的更新
+        :return:
+        """
         raise NotImplemented
