@@ -3,9 +3,22 @@ import re
 
 from hpc.codec.logger_abc import AbsLogScanner, Record
 from hpc.core.helper import rmdir
+from typing import Optional
+from hpc.codec.mode import Mode
+from hpc.codec.resource import AVS3_CTC_TEMPLATE
 
 
 class HpmScanner(AbsLogScanner):
+    def __init__(self, enc_log_dir: str, dec_log_dir: Optional[str], seqs: list, mode: Mode,
+                 output_excel: str = None,
+                 template: str = None,
+                 is_anchor: bool = False,
+                 is_separate: bool = False):
+        if template is None and output_excel is not None:
+            template = AVS3_CTC_TEMPLATE
+
+        super().__init__(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template, is_anchor, is_separate)
+
     def _scan_a_file(self, abs_path):
         file = os.path.basename(abs_path)
         _id, name = self._in_dict(file)

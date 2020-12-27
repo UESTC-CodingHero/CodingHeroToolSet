@@ -53,7 +53,7 @@ class Record:
         用于定位当前记录在excel中的行位置
         :return:
         """
-        return "_".join([str(self.mode), str(self.name), str(self.qp)])
+        return "_".join([str(self.mode.value), str(self.name), str(self.qp)])
 
     def __str__(self):
         return ",".join([self.name, str(self.qp), str(self.bitrate), str(self.psnr_y), str(self.psnr_u), str(
@@ -159,10 +159,11 @@ class AbsLogScanner(metaclass=ABCMeta):
             for name, records4 in self.records.items():
                 for record in records4:
                     record: Record = record
+                    identifier = record.loc()
                     print(record)
                     # fill in the sheet
-                    for index, value in enumerate(sheet.values()):
-                        if value == record.loc():
+                    for index, value in enumerate(sheet.values):
+                        if value[0] == identifier:
                             # both row and column indexes are started from 1 not 0
                             index += 1
                             s = 1

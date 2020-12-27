@@ -68,11 +68,15 @@ class HpcJobManager(object):
             if isinstance(valid_key, list):
                 for key in valid_key:
                     if key in kwargs.keys():
-                        cmd += f" /{key}:{kwargs.pop(key)}"
+                        value = kwargs.pop(key)
+                        if value is not None and len(str(value)) > 0:
+                            cmd += f" /{key}:{value}"
                         break
             else:
                 if valid_key in kwargs.keys():
-                    cmd += f" /{valid_key}:{kwargs.pop(valid_key)}"
+                    value = kwargs.pop(valid_key)
+                    if value is not None and len(str(value)) > 0:
+                        cmd += f" /{valid_key}:{value}"
         return cmd
 
     @staticmethod
