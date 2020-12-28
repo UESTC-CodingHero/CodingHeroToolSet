@@ -49,7 +49,7 @@ class Record:
         :param mode: 当前记录所属的编码模式
         :param name: 当前记录所属的序列简称
         """
-        self._id = _id
+        self.id = _id
         self.mode = mode
         self.name = name
         self.qp = 0
@@ -63,13 +63,6 @@ class Record:
         self.frames = 0
         self.bits = 0
         self.ssim_y = 0
-
-    def loc(self):
-        """
-        用于定位当前记录在excel中的行位置
-        :return:
-        """
-        return "_".join([str(self.mode.value), str(self.name), str(self.qp)])
 
     def __str__(self):
         return ",".join([self.name, str(self.qp), str(self.bitrate), str(self.psnr_y), str(self.psnr_u), str(
@@ -112,9 +105,15 @@ class AbsLogScanner(metaclass=ABCMeta):
         self.records = dict()
 
     def _in_dict(self, file: str):
+        # 1. match name exactly
+        for i, value in enumerate(self.seqs):
+            if value in file.split("_"):
+                return i, value
+        # 2. containing is ok
         for i, value in enumerate(self.seqs):
             if value in file:
                 return i, value
+        # failed
         return None
 
     def _add_record(self, record: Record):
@@ -123,10 +122,10 @@ class AbsLogScanner(metaclass=ABCMeta):
         :param record: 新的记录
         """
         # 此处已经根据ID排序
-        recodes_list = self.records.get(record._id) or list()
+        recodes_list = self.records.get(record.id) or list()
         recodes_list.append(record)
         recodes_list.sort(key=lambda r: r.qp)
-        self.records[record._id] = recodes_list
+        self.records[record.id] = recodes_list
 
     def _get_decode_time(self, dec_file: str, regex: str, enc_file: Optional[str] = None):
         """
@@ -175,11 +174,21 @@ class AbsLogScanner(metaclass=ABCMeta):
             for name, records4 in self.records.items():
                 for record in records4:
                     record: Record = record
-                    identifier = record.loc()
                     print(record)
+
+                    def get_mode_id_qp(v):
+                        vs = v.split("_")
+                        m = Mode(vs[0])
+                        q = int(vs[-1])
+                        i = vs[1:-1]
+                        i = "_".join(i)
+                        i, _ = self._in_dict(i)
+                        return i, q, m
+
                     # fill in the sheet
                     for index, value in enumerate(sheet.values):
-                        if value[0] == identifier:
+                        id_, qp, mode = get_mode_id_qp(value[0])
+                        if id_ == record.id and qp == record.qp and mode == record.mode:
                             # both row and column indexes are started from 1 not 0
                             index += 1
                             s = 1
