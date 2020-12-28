@@ -8,6 +8,22 @@ from hpc.codec.mode import Mode
 from hpc.codec.resource import AVS3_CTC_TEMPLATE
 
 
+def _trim_non_digital(s: str):
+    ret = ""
+    started = False
+
+    def is_digital(c):
+        return ord('9') >= ord(c) >= ord('0')
+
+    for ch in s:
+        if started and not is_digital(ch):
+            break
+        if is_digital(ch):
+            started = True
+            ret += ch
+    return ret
+
+
 class HpmScanner(AbsLogScanner):
     def __init__(self, enc_log_dir: str, dec_log_dir: Optional[str], seqs: list, mode: Mode,
                  output_excel: str = None,
@@ -25,9 +41,9 @@ class HpmScanner(AbsLogScanner):
         assert name is not None
         record = Record(_id, self.mode, name)
         if self.is_separate:
-            record.qp = int(file.split("_")[-2])
+            record.qp = int(_trim_non_digital(file.split("_")[-2]))
         else:
-            record.qp = int(file.split("_")[-1].split(".")[0])
+            record.qp = int(_trim_non_digital(file.split("_")[-1].split(".")[0]))
         with open(os.path.join(abs_path), "r") as fp:
             for line in fp:
                 line = line.strip()
@@ -67,7 +83,7 @@ class HpmScanner(AbsLogScanner):
                 # key is qp, value is file list
                 temp_dict = dict()
                 for file in cur_seq_log_files:
-                    qp = int(file.split("_")[-2])
+                    qp = int(_trim_non_digital(file.split("_")[-2]))
                     qp_files = temp_dict.get(qp) or list()
                     qp_files.append(file)
                     qp_files.sort(key=lambda fn: int(str(fn).split("-")[-1].split(".")[0]))
@@ -151,7 +167,7 @@ class HMScanner(AbsLogScanner):
             assert name is not None
             if name is not None:
                 record = Record(_id, self.mode, name)
-                record.qp = int(enc_file.split("_")[-1].split(".")[0])
+                record.qp = int(_trim_non_digital(enc_file.split("_")[-1].split(".")[0]))
                 with open(os.path.join(self.enc_log_dir, enc_file), "r") as fp:
                     for line in fp:
                         line = line.strip()
@@ -187,51 +203,6 @@ class HMScanner(AbsLogScanner):
     @staticmethod
     def get_end_line_reg():
         return r"SUMMARY --------------------------------------------------------"
-
-
-# class Scanner(object):
-#     def __init__(self,
-#                  enc_log_dir: str,
-#                  dec_log_dir: str,
-#                  seqs: list,
-#                  mode: Mode,
-#                  scanner: str = None,
-#                  output_excel: str = None,
-#                  template: str = None,
-#                  is_anchor: bool = False,
-#                  is_parallel: bool = False):
-#         """
-#         :param enc_log_dir: 编码日志目录
-#         :param dec_log_dir: 解码日志目录
-#         :param seqs: 要扫描的日志名称简写
-#         :param mode: 模式，"AI"\"LDB"\"LDP"\"RA"之一，用于决定excel表中的sheet
-#         :param scanner: Scanner的名称，目前支持"HPM"\"UAVS3E"
-#         :param output_excel: 指定输出的excel表格的名称
-#         :param template: 指定excel表格模板的名称
-#         :param is_anchor: 指定当前数据是否是anchor，用于决定Excel中sheet
-#         :param is_parallel: 指定当前日志是否是并行编码的，仅适用于HPM分片编码
-#         """
-#         if scanner is None:
-#             scanner = HpmScanner.__name__.lower()
-#         if scanner.lower() in HpmScanner.__name__.lower():
-#             self.scanner: AbsLogScanner = HpmScanner(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template,
-#                                                      is_anchor, is_parallel)
-#         else:
-#             is_parallel = False
-#             self.scanner: AbsLogScanner = Uavs3eScanner(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template,
-#                                                         is_anchor, is_parallel)
-#
-#     def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
-#         """
-#         :param filter_func_enc: 用于过滤文件夹中的非目标编码日志文件
-#         :param filter_func_dec: 用于过滤文件夹中的非目标解码日志文件
-#         :param rm_log: 当扫描完成时，是否删除log文件
-#         :return: 字典列表
-#         """
-#         return self.scanner.scan(filter_func_enc, filter_func_dec, rm_log)
-#
-#     def output(self):
-#         self.scanner.output()
 
 
 class SupportCodec:
