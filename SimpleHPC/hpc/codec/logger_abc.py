@@ -21,6 +21,22 @@ from hpc.codec.mode import Mode
 from typing import Optional
 
 
+def get_excel(template):
+    files = os.listdir()
+    files = list(filter(lambda fn: str(fn).endswith(template.split(".")[-1]), files))
+    if len(files) == 0:
+        return template, os.path.basename(os.path.abspath(os.curdir)) + "." + template.split(".")[-1]
+    elif len(files) == 1:
+        return files[0], files[0]
+    else:
+        for i, file in enumerate(files):
+            print(f"[{i}] {file}")
+        while True:
+            index = int(input("请选择一个模板:"))
+            if 0 <= index < len(files):
+                return files[index], files[0]
+
+
 class Record:
     """
     关于编码信息的一个记录，用于填充BD-rate表
