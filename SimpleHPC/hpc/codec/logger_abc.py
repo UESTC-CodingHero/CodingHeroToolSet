@@ -104,7 +104,7 @@ class AbsLogScanner(metaclass=ABCMeta):
         self.is_separate = is_separate
         self.records = dict()
 
-    def _in_dict(self, file: str):
+    def _in_dict(self, file: str) -> (Optional[int], Optional[str]):
         # 1. match name exactly
         for i, value in enumerate(self.seqs):
             if value in file.split("_"):
@@ -114,7 +114,7 @@ class AbsLogScanner(metaclass=ABCMeta):
             if value in file:
                 return i, value
         # failed
-        return None
+        return None, None
 
     def _add_record(self, record: Record):
         """
@@ -122,6 +122,8 @@ class AbsLogScanner(metaclass=ABCMeta):
         :param record: 新的记录
         """
         # 此处已经根据ID排序
+        if record is None:
+            return
         recodes_list = self.records.get(record.id) or list()
         recodes_list.append(record)
         recodes_list.sort(key=lambda r: r.qp)

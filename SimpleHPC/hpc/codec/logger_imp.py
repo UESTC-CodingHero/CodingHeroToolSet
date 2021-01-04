@@ -38,7 +38,8 @@ class HpmScanner(AbsLogScanner):
     def _scan_a_file(self, abs_path):
         file = os.path.basename(abs_path)
         _id, name = self._in_dict(file)
-        assert name is not None
+        if _id is None or name is None:
+            return None
         record = Record(_id, self.mode, name)
         if self.is_separate:
             record.qp = int(_trim_non_digital(file.split("_")[-2]))
@@ -75,7 +76,6 @@ class HpmScanner(AbsLogScanner):
             dec_files = list(filter(filter_func_dec, dec_files))
         if len(dec_files) != len(enc_files):
             dec_files = [""] * len(enc_files)
-        # TODO do merge first
         if self.is_separate:
             enc_files = list(filter(lambda fn: len(re.findall(r"\d+x\d+_\d+\S*_\d+_\d+\.\S+", fn)) > 0, enc_files))
             for _id, seq in enumerate(self.seqs):
@@ -86,10 +86,12 @@ class HpmScanner(AbsLogScanner):
                     qp = int(_trim_non_digital(file.split("_")[-2]))
                     qp_files = temp_dict.get(qp) or list()
                     qp_files.append(file)
-                    qp_files.sort(key=lambda fn: int(str(fn).split("-")[-1].split(".")[0]))
+                    # sort by sub index
+                    qp_files.sort(key=lambda fn: int(str(fn).split("_")[-1].split(".")[0]))
                     temp_dict[qp] = qp_files
                 for qp, files in temp_dict.items():
                     record = Record(_id, self.mode, seq)
+                    fps = int(_trim_non_digital(files[0].split("_")[-3]))
                     record.qp = qp
                     record.frames = 0
                     record.psnr_y = 0
@@ -102,6 +104,9 @@ class HpmScanner(AbsLogScanner):
                     record.ssim_y = 0
                     records = [self._scan_a_file(os.path.join(self.enc_log_dir, f)) for f in files]
                     for r in records:
+                        if r is None:
+                            print("WARNING")
+                            continue
                         assert r.qp == qp
                         record.frames += r.frames
                         record.psnr_y += r.psnr_y * r.frames
@@ -111,11 +116,16 @@ class HpmScanner(AbsLogScanner):
                         record.bitrate += r.bitrate * r.frames
                         record.bits += r.bits
                         record.encode_time += r.encode_time
-
+                    record.psnr_y /= record.frames
+                    record.psnr_u /= record.frames
+                    record.psnr_v /= record.frames
+                    record.ssim_y /= record.frames
+                    record.bitrate = fps * record.bits / record.frames
         else:
             for enc_file, dec_file in zip(enc_files, dec_files):
                 _id, name = self._in_dict(enc_file)
-                assert name is not None
+                if _id is None or name is None:
+                    continue
                 if name is not None:
                     record = self._scan_a_file(os.path.join(self.enc_log_dir, enc_file))
                     record.decode_time = \

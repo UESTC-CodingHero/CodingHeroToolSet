@@ -1,6 +1,6 @@
 from common.com_def import Sequence, Frame, get_uv_property
-from common.com_def import BitDepth
-from typing import BinaryIO, Optional, NoReturn
+from common.com_def import BitDepth, Format
+from typing import BinaryIO, Optional, NoReturn, IO
 from abc import ABC
 import numpy as np
 import os
@@ -32,7 +32,7 @@ class YuvIO(object):
         """
 
         if self.fp is None:
-            self.fp: BinaryIO = open(self.sequence.full_name(), self.mode)
+            self.fp: IO = open(self.sequence.full_name(), self.mode)
 
     def close(self) -> NoReturn:
         """
@@ -110,10 +110,9 @@ class YuvReader(YuvIO, ABC):
         else:
             return read_frame(np.uint16)
 
-    def __next__(self):
+    def __next__(self) -> Frame:
         try:
-            frame = self.read()
-            return frame
+            return self.read()
         except Exception as e:
             print(e)
             raise StopIteration
@@ -137,5 +136,6 @@ class YuvWriter(YuvIO, ABC):
         """
         self._check_open()
         frame.buff_y.tofile(self.fp)
-        frame.buff_u.tofile(self.fp)
-        frame.buff_v.tofile(self.fp)
+        if frame.fmt != Format.YUV400:
+            frame.buff_u.tofile(self.fp)
+            frame.buff_v.tofile(self.fp)

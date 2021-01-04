@@ -191,8 +191,8 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     bitstream = get_name(job_name, -1, "bin", "bin")
                     bitstream = path_join(bitstream, temp_dir)
                     t = re.findall(r"-i\s+{}", merger_command)[0]
-                    merger_command = merger_command.replace(t, " ".join([t] * len(bitstream_list)))
-                    merger_cmd = merger_command.format(*bitstream_list, bitstream)
+                    merger_cmd = merger_command.replace(t, " ".join([t] * len(bitstream_list)))
+                    merger_cmd = merger_cmd.format(*bitstream_list, bitstream)
                     copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
                     copy_bin_cmd_list.append(copy_bin_cmd)
                 else:
@@ -214,7 +214,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                             copy_dec_cmd, copy_bin_cmd_list]
                 for i, (prefix, cmd) in enumerate(zip(prefixes, commands)):
                     prefix = prefix.value
-                    if isinstance(cmd, str):
+                    if isinstance(cmd, str) and len(cmd) > 0:
                         if prefix is None or len(prefix) == 0:
                             stdout = None
                             stderr = None
@@ -230,6 +230,8 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     elif isinstance(cmd, list) or isinstance(cmd, tuple):
                         temp_depend = copy.deepcopy(depend)
                         for j, c in enumerate(cmd):
+                            if c is None or len(c) == 0:
+                                continue
                             if prefix is None or len(prefix) == 0:
                                 stdout = None
                                 stderr = None
@@ -250,14 +252,18 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                 if track != ProgressDIR.NONE and not local:
                     if par_enc:
                         if track == ProgressDIR.STDOUT:
-                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "out"), workdir, stdout_dir)
+                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "out"), workdir,
+                                                   stdout_dir)
                         elif track == ProgressDIR.STDERR:
-                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "err"), workdir, stderr_dir)
+                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "err"), workdir,
+                                                   stderr_dir)
                     else:
                         if track == ProgressDIR.STDOUT:
-                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "out"), workdir, stdout_dir)
+                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "out"), workdir,
+                                                   stdout_dir)
                         elif track == ProgressDIR.STDERR:
-                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "err"), workdir, stderr_dir)
+                            track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "err"), workdir,
+                                                   stderr_dir)
                     Progress.notice(job_id, (frames + sampling - 1) // sampling,
                                     codec.get_valid_line_reg(), codec.get_end_line_reg(), track_file)
     return job_id_list
