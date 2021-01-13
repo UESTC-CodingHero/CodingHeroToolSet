@@ -1,8 +1,9 @@
 import hashlib
 import os
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Union, List, Tuple, Optional
+from typing import Union, List, Tuple, Optional, IO
 import shutil
 import subprocess as sp
 
@@ -70,8 +71,8 @@ def get_hash(max_len: int = 4, seed: Optional[Union[list, str]] = None):
 
 def run_cmd(cmd: Union[str, list], fetch_console=False,
             workdir: Optional[str] = None,
-            stdout: Optional[str] = None,
-            stderr: Optional[str] = None):
+            stdout: Optional[Union[str, IO]] = None,
+            stderr: Optional[Union[str, IO]] = None):
     """
     新开一个进程执行传入的命令
     如果fetch_console为True,则可返回命令的标准输出。
@@ -89,9 +90,15 @@ def run_cmd(cmd: Union[str, list], fetch_console=False,
     if workdir is None:
         workdir = os.curdir
     if stdout is None:
-        stdout = os.devnull
+        stdout = sys.stdout
     if stderr is None:
-        stderr = os.devnull
+        stderr = sys.stderr
+
+    if isinstance(stdout, str):
+        stdout = open(stdout, "w+")
+    if isinstance(stderr, str):
+        stderr = open(stderr, "w+")
+
     if isinstance(cmd, list):
         assert len(cmd) != 0
         p = ThreadPoolExecutor(len(cmd))
@@ -107,13 +114,14 @@ def run_cmd(cmd: Union[str, list], fetch_console=False,
         else:
             if workdir is not None:
                 try:
-                    p = sp.Popen(cmd, shell=True, stdout=open(stdout, "w+"), stderr=open(stderr, "w+"))
+                    p = sp.Popen(cmd, shell=True, stdout=stdout, stderr=stderr)
                     p.wait()
                     success = True
                 except KeyboardInterrupt as e:
                     raise e
                 except OSError or TimeoutError:
                     success = False
+            # Never occur
             else:
                 success = os.system(cmd) == 0
             os.chdir(cur)
