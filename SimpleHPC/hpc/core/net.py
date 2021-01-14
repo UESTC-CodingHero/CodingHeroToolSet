@@ -1,10 +1,12 @@
 import json
+import shelve
 import os
 import re
 import socket
 import time
 from abc import ABCMeta
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Optional, Union
 
 from hpc.core.hpc_job import HpcJobManager, HpcJobState
@@ -13,6 +15,15 @@ HOST = socket.gethostname()
 PORT = 20202
 BUFFER_SIZE = 2048
 MAX_CLIENTS = 2048
+
+
+class ProgressServerState(object):
+    def __init__(self, job_id, total, valid_line_reg, end_line_reg, file):
+        self.job_id = job_id
+        self.total = total
+        self.valid_line_reg = valid_line_reg
+        self.end_line_reg = end_line_reg
+        self.file = file
 
 
 def to_json(job_id: int, total: int, valid_line_reg: Optional[str], end_line_reg: Optional[str], file: str):
@@ -97,6 +108,8 @@ class EmailNotificationServer(Socket):
 
 
 class ProgressServer(Socket):
+    lock = Lock()
+
     class Callback(metaclass=ABCMeta):
 
         def on_error(self, e: Exception):
@@ -145,17 +158,22 @@ class ProgressServer(Socket):
             """
             raise NotImplemented
 
-    def __init__(self, port: int = PORT, host: str = HOST, max_clients: int = MAX_CLIENTS, callback: Callback = None):
+    def __init__(self, port: int = PORT, host: str = HOST, max_clients: int = MAX_CLIENTS, callback: Callback = None,
+                 cache_file: str = None):
         """
         创建一个Progress服务器，用于更新任务的进度，即在指定的时候回调指定的方法
         :param port: 端口号，默认为20202
         :param host: 主机名，默认为当前主机名
         :param max_clients: 最大监听数量，默认为2048
         :param callback: 更新进度条的回调接口
+        :param cache_file: 缓存文件名称，如果指定了该参数，进度条服务器状态会保存，以便重启后能正常恢复进度条任务
         """
         self.max_clients = max_clients
         self.current_clients = 0
         self.callback = callback
+        self.executor = ThreadPoolExecutor(self.max_clients)
+        self.states = dict()
+        self.cache_file = cache_file
         super().__init__(port, host)
 
     def init(self):
@@ -163,74 +181,96 @@ class ProgressServer(Socket):
         self.socket.bind((self.host, self.port))
         # 设置最大连接数，超过后排队
         self.socket.listen(self.max_clients)
+        # 加载缓存
+        if self.cache_file is not None:
+            with shelve.open(self.cache_file) as cache:
+                for k, v in cache.items():
+                    self.executor.submit(self.handle_a_job, v)
+
+    def handle_a_job(self, state: ProgressServerState):
+        def cache_if_possible():
+            if self.cache_file:
+                with shelve.open(self.cache_file) as cache:
+                    for k, v in self.states.items():
+                        cache[str(k)] = v
+
+        ProgressServer.lock.acquire(timeout=2)
+        self.states[state.job_id] = state
+        cache_if_possible()
+        ProgressServer.lock.release()
+        if self.callback is not None:
+            self.callback.on_submit(state.job_id, total=state.total, valid_line_reg=state.valid_line_reg,
+                                    end_line_reg=state.end_line_reg,
+                                    file=state.file)
+        sleep_time = 1
+
+        # State: Configuring Running Finished Failed Canceled
+        state: HpcJobState = HpcJobManager.view(state.job_id)
+        while state == HpcJobState.Configuring or state == HpcJobState.Queued or state == HpcJobState.Submitted:
+            time.sleep(sleep_time)
+            if self.callback is not None:
+                self.callback.on_waiting()
+            state = HpcJobManager.view(state.job_id)
+        pre_count = 0
+        sleep_time = 1
+        start_time = -1
+        if self.callback is not None:
+            self.callback.on_running()
+        while state == HpcJobState.Running:
+            if not os.path.exists(state.file):
+                state = HpcJobManager.view(state.job_id)
+                break
+            with open(state.file) as fp:
+                count = 0
+                num_of_lines = 0
+                for line in fp:
+                    num_of_lines += 1
+                    m = state.valid_line_reg is None or re.match(state.valid_line_reg, line)
+                    if m:
+                        count += 1
+                    if state.end_line_reg is not None and re.match(state.end_line_reg, line):
+                        state = HpcJobManager.view(state.job_id)
+                    elif state.end_line_reg is None:
+                        state = HpcJobManager.view(state.job_id)
+                if count != pre_count:
+                    if start_time == -1:
+                        start_time = time.time()
+                    else:
+                        sleep_time = (time.time() - start_time) / 5
+                        start_time = time.time()
+                    pre_count = count
+                    if self.callback is not None:
+                        self.callback.on_update(state.job_id, count * 100 / state.total, f"{count}/{state.total}")
+                elif start_time == -1 and num_of_lines > 0:
+                    start_time = time.time()
+            time.sleep(sleep_time)
+        if self.callback is not None:
+            self.callback.on_finish(state)
+        ProgressServer.lock.acquire(timeout=2)
+        self.states.pop(state.job_id)
+        cache_if_possible()
+        ProgressServer.lock.release()
 
     def handler(self, client: socket.socket):
         try:
             msg = Client(sock=client).recv()
-            job_id, total, valid_line_reg, end_line_reg, file = from_json(msg)
-            if self.callback is not None:
-                self.callback.on_submit(job_id, total=total, valid_line_reg=valid_line_reg, end_line_reg=end_line_reg,
-                                        file=file)
-            sleep_time = 1
-
-            # State: Configuring Running Finished Failed Canceled
-            state: HpcJobState = HpcJobManager.view(job_id)
-            while state == HpcJobState.Configuring or state == HpcJobState.Queued or state == HpcJobState.Submitted:
-                time.sleep(sleep_time)
-                if self.callback is not None:
-                    self.callback.on_waiting()
-                state = HpcJobManager.view(job_id)
-            pre_count = 0
-            sleep_time = 1
-            start_time = -1
-            if self.callback is not None:
-                self.callback.on_running()
-            while state == HpcJobState.Running:
-                if not os.path.exists(file):
-                    state = HpcJobManager.view(job_id)
-                    break
-                with open(file) as fp:
-                    count = 0
-                    num_of_lines = 0
-                    for line in fp:
-                        num_of_lines += 1
-                        m = valid_line_reg is None or re.match(valid_line_reg, line)
-                        if m:
-                            count += 1
-                        if end_line_reg is not None and re.match(end_line_reg, line):
-                            state = HpcJobManager.view(job_id)
-                        elif end_line_reg is None:
-                            state = HpcJobManager.view(job_id)
-                    if count != pre_count:
-                        if start_time == -1:
-                            start_time = time.time()
-                        else:
-                            sleep_time = (time.time() - start_time) / 5
-                            start_time = time.time()
-                        pre_count = count
-                        if self.callback is not None:
-                            self.callback.on_update(job_id, count * 100 / total, f"{count}/{total}")
-                    elif start_time == -1 and num_of_lines > 0:
-                        start_time = time.time()
-                time.sleep(sleep_time)
-            if self.callback is not None:
-                self.callback.on_finish(state)
+            state = ProgressServerState(*from_json(msg))
+            self.handle_a_job(state)
         except json.decoder.JSONDecodeError or TypeError or OSError as e:
             if self.callback is not None:
                 self.callback.on_error(e)
         self.current_clients -= 1
 
     def start(self):
-        with ThreadPoolExecutor(self.max_clients) as executor:
-            while True:
-                try:
-                    # 建立客户端连接
-                    client_socket, _ = self.socket.accept()
-                    self.current_clients += 1
-                    executor.submit(self.handler, client_socket)
-                except socket.error or KeyboardInterrupt as e:
-                    print(e)
-                    break
+        while True:
+            try:
+                # 建立客户端连接
+                client_socket, _ = self.socket.accept()
+                self.current_clients += 1
+                self.executor.submit(self.handler, client_socket)
+            except socket.error or KeyboardInterrupt as e:
+                print(e)
+                break
 
 
 class Client(Socket):

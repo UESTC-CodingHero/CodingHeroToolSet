@@ -59,7 +59,16 @@ class HpcProgressCallback(ProgressServer.Callback):
 
 def main():
     logging.info("Start Server...")
-    ProgressServer(callback=HpcProgressCallback()).start()
+    try:
+        p = os.path.expanduser("~")
+    except:
+        p = os.environ["HOME"]
+    sub_dir = ".progress_server_cache"
+    if not os.path.exists(os.path.join(p, sub_dir)):
+        os.makedirs(os.path.join(p, sub_dir))
+    # only the file name, without suffix
+    cache = "all_jobs"
+    ProgressServer(callback=HpcProgressCallback(), cache_file=os.path.join(p, sub_dir, cache)).start()
 
     logging.info("Stop Server...")
 
