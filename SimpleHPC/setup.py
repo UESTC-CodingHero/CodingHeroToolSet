@@ -11,7 +11,7 @@ setup(name="hpc",
       install_requires=["openpyxl"],
       include_package_data=True,
       package_data={"": ["*.xlsm"]},
-      exclude_package_data={'': ['README.txt']},
+      exclude_package_data={'': ['README.md']},
       entry_points={'console_scripts': [
           'progress_server = hpc.app.app_master:main',
       ]},
