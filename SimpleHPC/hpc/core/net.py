@@ -109,6 +109,7 @@ class EmailNotificationServer(Socket):
 
 class ProgressServer(Socket):
     lock = Lock()
+    timeout = 10
 
     class Callback(metaclass=ABCMeta):
 
@@ -191,10 +192,14 @@ class ProgressServer(Socket):
         def cache_if_possible():
             if self.cache_file:
                 with shelve.open(self.cache_file) as cache:
+                    # clear firstly, in order to reduce space or memory.
+                    # do not call cache.clear(), for it does not clear the cache in fact
+                    for k in cache.keys():
+                        del cache[k]
                     for k, v in self.states.items():
                         cache[str(k)] = v
 
-        ProgressServer.lock.acquire(timeout=2)
+        ProgressServer.lock.acquire(timeout=ProgressServer.timeout)
         self.states[job_info.job_id] = job_info
         cache_if_possible()
         ProgressServer.lock.release()
@@ -229,24 +234,23 @@ class ProgressServer(Socket):
                     if m:
                         count += 1
                     if job_info.end_line_reg is not None and re.match(job_info.end_line_reg, line):
-                        job_info = HpcJobManager.view(job_info.job_id)
+                        job_state = HpcJobManager.view(job_info.job_id)
                     elif job_info.end_line_reg is None:
-                        job_info = HpcJobManager.view(job_info.job_id)
+                        job_state = HpcJobManager.view(job_info.job_id)
                 if count != pre_count:
-                    if start_time == -1:
-                        start_time = time.time()
-                    else:
-                        sleep_time = (time.time() - start_time) / 5
-                        start_time = time.time()
+                    if start_time != -1:
+                        sleep_time = (time.time() - start_time) / 20
+                    start_time = time.time()
                     pre_count = count
                     if self.callback is not None:
-                        self.callback.on_update(job_info.job_id, count * 100 / job_info.total, f"{count}/{job_info.total}")
+                        self.callback.on_update(job_info.job_id, count * 100 / job_info.total,
+                                                f"{count}/{job_info.total}")
                 elif start_time == -1 and num_of_lines > 0:
                     start_time = time.time()
             time.sleep(sleep_time)
         if self.callback is not None:
             self.callback.on_finish(job_state)
-        ProgressServer.lock.acquire(timeout=2)
+        ProgressServer.lock.acquire(timeout=ProgressServer.timeout)
         self.states.pop(job_info.job_id)
         cache_if_possible()
         ProgressServer.lock.release()
