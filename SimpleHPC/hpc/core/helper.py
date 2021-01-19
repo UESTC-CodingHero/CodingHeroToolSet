@@ -94,19 +94,19 @@ def run_cmd(cmd: Union[str, list], fetch_console=False,
     if stderr is None:
         stderr = sys.stderr
 
-    if isinstance(stdout, str):
-        stdout = open(stdout, "w+")
-    if isinstance(stderr, str):
-        stderr = open(stderr, "w+")
-
     if isinstance(cmd, list):
         assert len(cmd) != 0
         p = ThreadPoolExecutor(len(cmd))
         all_task = [p.submit(run_cmd, c, fetch_console, workdir, stdout, stderr) for c in cmd]
         return [future.result() for future in as_completed(all_task)]
     else:
+        # backup
         cur = os.getcwd()
         os.chdir(workdir)
+        if isinstance(stdout, str):
+            stdout = open(stdout, "w+")
+        if isinstance(stderr, str):
+            stderr = open(stderr, "w+")
         if fetch_console:
             stdout = os.popen(cmd).read().strip()
             os.chdir(cur)

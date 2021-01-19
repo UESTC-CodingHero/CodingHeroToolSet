@@ -18,15 +18,16 @@ MAX_CLIENTS = 2048
 
 
 class ProgressServerJobInfo(object):
-    def __init__(self, job_id, total, valid_line_reg, end_line_reg, file):
-        self.job_id = job_id
-        self.total = total
-        self.valid_line_reg = valid_line_reg
-        self.end_line_reg = end_line_reg
-        self.file = file
+    def __init__(self, job_id: Union[str, int], total: int, valid_line_reg: Optional[str], end_line_reg: Optional[str],
+                 file: str):
+        self.job_id: Union[str, int] = job_id
+        self.total: int = total
+        self.valid_line_reg: str = valid_line_reg
+        self.end_line_reg: str = end_line_reg
+        self.file: str = file
 
 
-def to_json(job_id: int, total: int, valid_line_reg: Optional[str], end_line_reg: Optional[str], file: str):
+def to_json(job_id: Union[str, int], total: int, valid_line_reg: Optional[str], end_line_reg: Optional[str], file: str):
     temp = dict()
     temp["0"] = job_id
     temp["1"] = total
@@ -217,11 +218,14 @@ class ProgressServer(Socket):
                 self.callback.on_waiting()
             job_state = HpcJobManager.view(job_info.job_id)
         pre_count = 0
+        count = 0
         sleep_time = 1
         start_time = -1
         if self.callback is not None:
             self.callback.on_running()
         while job_state == HpcJobState.Running:
+            time.sleep(sleep_time)
+            job_state = HpcJobManager.view(job_info.job_id)
             if not os.path.exists(job_info.file):
                 job_state = HpcJobManager.view(job_info.job_id)
                 break
@@ -233,10 +237,6 @@ class ProgressServer(Socket):
                     m = job_info.valid_line_reg is None or re.match(job_info.valid_line_reg, line)
                     if m:
                         count += 1
-                    if job_info.end_line_reg is not None and re.match(job_info.end_line_reg, line):
-                        job_state = HpcJobManager.view(job_info.job_id)
-                    elif job_info.end_line_reg is None:
-                        job_state = HpcJobManager.view(job_info.job_id)
                 if count != pre_count:
                     if start_time != -1:
                         sleep_time = (time.time() - start_time) / 20
@@ -247,9 +247,11 @@ class ProgressServer(Socket):
                                                 f"{count}/{job_info.total}")
                 elif start_time == -1 and num_of_lines > 0:
                     start_time = time.time()
-            time.sleep(sleep_time)
         if self.callback is not None:
             self.callback.on_finish(job_state)
+            if count == job_info.total:
+                self.callback.on_update(job_info.job_id, 100,
+                                        f"Finished")
         ProgressServer.lock.acquire(timeout=ProgressServer.timeout)
         self.states.pop(job_info.job_id)
         cache_if_possible()
