@@ -1,5 +1,6 @@
-from enum import Enum
 import logging
+from enum import Enum
+
 from hpc.core.helper import run_cmd
 
 
@@ -44,14 +45,28 @@ class JobManager(object):
         return True
 
     @staticmethod
+    def run_cmd(cmd_set):
+        success = True
+        for _, name, cmd, workdir, stdout, stderr, depend in cmd_set:
+            logging.info(cmd)
+            success = run_cmd(cmd, workdir=workdir, stdout=stdout, stderr=stderr) and success
+        return success
+
+    @staticmethod
     def submit(job_id, **kwargs):
         if job_id is None or JobManager.cmd_set.get(job_id) is None:
             return False
+        from concurrent.futures import ProcessPoolExecutor
+        executor: ProcessPoolExecutor = kwargs.get("executor") or None
         success = True
-        for _, _, cmd, workdir, stdout, stderr, _ in JobManager.cmd_set[job_id]:
-            logging.info(cmd)
-            success = run_cmd(cmd, workdir=workdir, stdout=stdout, stderr=stderr) and success
+        task = None
+        if executor is None:
+            success = JobManager.run_cmd(JobManager.cmd_set[job_id])
+        else:
+            task = executor.submit(JobManager.run_cmd, JobManager.cmd_set[job_id])
         JobManager.state_set[job_id] = JobState.Finished if success else JobState.Failed
+        JobManager.cmd_set.clear()
+        return task
 
     @staticmethod
     def view(job_id):

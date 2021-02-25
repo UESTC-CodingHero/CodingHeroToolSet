@@ -54,6 +54,9 @@ class HpcProgressCallback(ProgressServer.Callback):
         return
 
     def on_update(self, jid: Union[str, int], progress: Union[float, int], info: str):
+        if progress < 0 or progress > 100:
+            logging.warning(f"{self.id} Invalid Progress: {progress}...")
+            progress = 99
         HpcJobManager.modify(jid, progress=int(progress), progressmsg=info)
 
 

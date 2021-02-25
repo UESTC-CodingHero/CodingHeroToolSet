@@ -13,6 +13,7 @@ from hpc.core.helper import path_join
 from hpc.core.hpc_job import HpcJobManager
 from hpc.core.local_job import JobManager
 from hpc.core.net import Progress
+from concurrent.futures import ProcessPoolExecutor as Executor, wait, ALL_COMPLETED
 
 
 class Prefix(Enum):
@@ -78,7 +79,10 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
     local = extra_param.get(KEY_LOCAL) if extra_param.get(KEY_LOCAL) else not HpcJobManager.check_env()
 
     manager = HpcJobManager
+    executor = None
+    tasks = list()
     if local:
+        executor = Executor(max_workers=max(1, os.cpu_count() - 2))
         manager = JobManager
 
     def refine_par():
@@ -245,8 +249,12 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                             if success:
                                 depend.append(task_name)
                         del temp_depend
-
-                manager.submit(job_id, nodegroup=groups, requestednodes=nodes, memorypernode=mem)
+                if manager == JobManager:
+                    task = manager.submit(job_id, nodegroup=groups, requestednodes=nodes, memorypernode=mem,
+                                          executor=executor)
+                    tasks.append(task)
+                else:
+                    manager.submit(job_id, nodegroup=groups, requestednodes=nodes, memorypernode=mem)
                 job_id_list.append(job_id)
                 track_file = None
                 if track != ProgressDIR.NONE and not local:
@@ -266,6 +274,9 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                                                    stderr_dir)
                     Progress.notice(job_id, (frames + sampling - 1) // sampling,
                                     codec.get_valid_line_reg(), codec.get_end_line_reg(), track_file)
+    if executor is not None:
+        wait(tasks, return_when=ALL_COMPLETED)
+        executor.shutdown()
     return job_id_list
 
 
