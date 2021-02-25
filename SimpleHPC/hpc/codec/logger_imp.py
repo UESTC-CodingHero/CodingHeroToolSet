@@ -116,11 +116,12 @@ class HpmScanner(AbsLogScanner):
                         record.bitrate += r.bitrate * r.frames
                         record.bits += r.bits
                         record.encode_time += r.encode_time
-                    record.psnr_y /= record.frames
-                    record.psnr_u /= record.frames
-                    record.psnr_v /= record.frames
-                    record.ssim_y /= record.frames
-                    record.bitrate = fps * record.bits / record.frames
+                    if record.frames != 0:
+                        record.psnr_y /= record.frames
+                        record.psnr_u /= record.frames
+                        record.psnr_v /= record.frames
+                        record.ssim_y /= record.frames
+                        record.bitrate = fps * record.bits / record.frames
         else:
             for enc_file, dec_file in zip(enc_files, dec_files):
                 _id, name = self._in_dict(enc_file)
