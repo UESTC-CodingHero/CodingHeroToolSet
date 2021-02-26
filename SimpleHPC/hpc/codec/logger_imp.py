@@ -35,7 +35,7 @@ class HpmScanner(AbsLogScanner):
 
         super().__init__(enc_log_dir, dec_log_dir, seqs, mode, output_excel, template, is_anchor, is_separate)
 
-    def _scan_a_file(self, abs_path):
+    def _scan_a_file(self, abs_path, remove_first_I: int = False):
         file = os.path.basename(abs_path)
         _id, name = self._in_dict(file)
         if _id is None or name is None:
@@ -63,8 +63,39 @@ class HpmScanner(AbsLogScanner):
                 elif "Encoded frame count" in line:
                     record.frames = int(line.split("=")[1].strip())
                 elif "Total encoding time" in line:
+                    # second
                     sp = line.split("=")[1].strip().split(" ")
                     record.encode_time = float(sp[2])
+        if remove_first_I:
+            found = False
+            psnr_y = psnr_u = psnr_v = bits = time = ssim_y = 0
+            fps = 0
+            with open(os.path.join(abs_path), "r") as fp:
+                for line in fp:
+                    line = line.strip()
+                    if "FPS" in line and ":" in line:
+                        fps = int(line.split(":")[1].strip())
+                        continue
+                    match = re.match(HpmScanner.get_valid_line_reg(), line)
+                    if match:
+                        if "( I)" in line:
+                            found = True
+                            psnr_y = float(match.group(3))
+                            psnr_u = float(match.group(4))
+                            psnr_v = float(match.group(5))
+                            bits = int(match.group(6))
+                            time = int(match.group(7))
+                            ssim_y = float(match.group(8))
+                            break
+            if found and fps > 0:
+                record.psnr_y = (record.psnr_y * record.frames - psnr_y) / (record.frames - 1)
+                record.psnr_u = (record.psnr_u * record.frames - psnr_u) / (record.frames - 1)
+                record.psnr_v = (record.psnr_v * record.frames - psnr_v) / (record.frames - 1)
+                record.ssim_y = (record.ssim_y * record.frames - ssim_y) / (record.frames - 1)
+                record.frames -= 1
+                record.bits -= bits
+                record.bitrate = record.bits * record.frames / fps
+                record.encode_time = (record.encode_time * 1000 - time) / 1000
         return record
 
     def scan(self, filter_func_enc: callable = None, filter_func_dec: callable = None, rm_log: bool = False):
@@ -102,7 +133,8 @@ class HpmScanner(AbsLogScanner):
                     record.encode_time = 0
                     record.decode_time = 0
                     record.ssim_y = 0
-                    records = [self._scan_a_file(os.path.join(self.enc_log_dir, f)) for f in files]
+                    records = [self._scan_a_file(os.path.join(self.enc_log_dir, f), remove_first_I=(i > 0))
+                               for i, f in enumerate(files)]
                     for r in records:
                         if r is None:
                             print("WARNING")
@@ -113,22 +145,40 @@ class HpmScanner(AbsLogScanner):
                         record.psnr_u += r.psnr_u * r.frames
                         record.psnr_v += r.psnr_v * r.frames
                         record.ssim_y += r.ssim_y * r.frames
-                        record.bitrate += r.bitrate * r.frames
                         record.bits += r.bits
                         record.encode_time += r.encode_time
                     if record.frames != 0:
-                        record.psnr_y /= record.frames
-                        record.psnr_u /= record.frames
-                        record.psnr_v /= record.frames
-                        record.ssim_y /= record.frames
-                        record.bitrate = fps * record.bits / record.frames
+                        # read size from concat bitstream
+                        fd = "_".join(str(files[0]).split("_")[1:-1]) + ".bin"
+                        fdd = os.path.join(self.enc_log_dir, "..", "bin")
+                        temp = os.listdir(fdd)
+                        temp = list(filter(lambda fn: fd in fn, temp))
+                        if len(temp) == 1:
+                            fd = temp[0]
+                            fd = os.path.join(fdd, fd)
+                            # in bytes
+                            record.bits = os.stat(fd).st_size
+                            # video end code
+                            record.bits -= 4
+                            # md5
+                            record.bits -= record.frames * 23
+
+                            # to bits
+                            record.bits <<= 3
+
+                            record.psnr_y /= record.frames
+                            record.psnr_u /= record.frames
+                            record.psnr_v /= record.frames
+                            record.ssim_y /= record.frames
+                            record.bitrate = fps * record.bits / record.frames
+                    self._add_record(record)
         else:
             for enc_file, dec_file in zip(enc_files, dec_files):
                 _id, name = self._in_dict(enc_file)
                 if _id is None or name is None:
                     continue
                 if name is not None:
-                    record = self._scan_a_file(os.path.join(self.enc_log_dir, enc_file))
+                    record = self._scan_a_file(os.path.join(self.enc_log_dir, enc_file), remove_first_I=False)
                     record.decode_time = \
                         self._get_decode_time(dec_file,
                                               r"\s*total decoding time\s+=\s*\d+\s*msec,\s*(\d+\.\d+)\s*sec",
