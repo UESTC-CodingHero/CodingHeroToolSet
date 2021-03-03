@@ -170,7 +170,7 @@ class HpmScanner(AbsLogScanner):
                             record.psnr_u /= record.frames
                             record.psnr_v /= record.frames
                             record.ssim_y /= record.frames
-                            record.bitrate = fps * record.bits / record.frames
+                            record.bitrate = fps * record.bits / record.frames / 1000
                     self._add_record(record)
         else:
             for enc_file, dec_file in zip(enc_files, dec_files):
