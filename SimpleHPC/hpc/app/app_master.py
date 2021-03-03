@@ -27,7 +27,7 @@ class HpcProgressCallback(ProgressServer.Callback):
     def on_submit(self, job_id: Union[str, int], **kwargs):
         self.id = job_id
         self.file = kwargs.pop("file")
-        logging.info(f"{job_id} {os.path.basename(self.file)}")
+        logging.info(f"{job_id} {[os.path.basename(file) for file in self.file.split(',')]}")
         return
 
     def on_waiting(self):

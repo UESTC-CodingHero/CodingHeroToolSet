@@ -39,7 +39,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                cores: int, nodes: Optional[str], groups: Optional[str], priority: Union[str, int],
                codec: Union[AbsLogScanner, Type[AbsLogScanner]],
                encoder_command: str, merger_command: Optional[str], decoder_command: Optional[str],
-               track: ProgressDIR = ProgressDIR.STDOUT,
+               track_type: ProgressDIR = ProgressDIR.STDOUT,
                sampling: int = 1,
                **extra_param):
     """
@@ -70,7 +70,7 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
     :param encoder_command:
     :param merger_command:
     :param decoder_command:
-    :param track:
+    :param track_type:
     :param sampling:
     :param extra_param:
     :return:
@@ -268,22 +268,28 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                     manager.submit(job_id, nodegroup=groups, requestednodes=nodes, memorypernode=mem)
                 job_id_list.append(job_id)
                 track_file = None
-                if track != ProgressDIR.NONE and not local:
+                if track_type != ProgressDIR.NONE and not local:
                     if par_enc:
-                        if track == ProgressDIR.STDOUT:
-                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "out"), workdir,
-                                                   stdout_dir)
-                        elif track == ProgressDIR.STDERR:
-                            track_file = path_join(get_name(name_qp, 0, Prefix.ENCODE.value, "err"), workdir,
-                                                   stderr_dir)
+                        for i in range(rcs):
+                            track_f = ""
+                            if track_type == ProgressDIR.STDOUT:
+                                track_f = path_join(get_name(name_qp, i, Prefix.ENCODE.value, "out"), workdir,
+                                                    stdout_dir)
+                            elif track_type == ProgressDIR.STDERR:
+                                track_f = path_join(get_name(name_qp, i, Prefix.ENCODE.value, "err"), workdir,
+                                                    stderr_dir)
+                            if track_file is None:
+                                track_file = track_f
+                            else:
+                                track_file = f"{track_file},{track_f}"
                     else:
-                        if track == ProgressDIR.STDOUT:
+                        if track_type == ProgressDIR.STDOUT:
                             track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "out"), workdir,
                                                    stdout_dir)
-                        elif track == ProgressDIR.STDERR:
+                        elif track_type == ProgressDIR.STDERR:
                             track_file = path_join(get_name(name_qp, -1, Prefix.ENCODE.value, "err"), workdir,
                                                    stderr_dir)
-                    Progress.notice(job_id, (frames + sampling - 1) // sampling,
+                    Progress.notice(job_id, (frames + sampling - 1 + rcs - 1) // sampling,
                                     codec.get_valid_line_reg(), codec.get_end_line_reg(), track_file)
     if executor is not None:
         wait(tasks, return_when=ALL_COMPLETED)

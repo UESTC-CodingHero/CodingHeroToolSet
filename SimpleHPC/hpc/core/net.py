@@ -26,6 +26,9 @@ class ProgressServerJobInfo(object):
         self.end_line_reg: str = end_line_reg
         self.file: str = file
 
+    def __str__(self):
+        return f"{self.job_id}: {self.total}: {self.file}"
+
 
 def to_json(job_id: Union[str, int], total: int, valid_line_reg: Optional[str], end_line_reg: Optional[str], file: str):
     temp = dict()
@@ -200,6 +203,7 @@ class ProgressServer(Socket):
                     cache.sync()
                     for k, v in self.states.items():
                         cache[str(k)] = v
+                    cache.sync()
 
         ProgressServer.lock.acquire(timeout=ProgressServer.timeout)
         self.states[job_info.job_id] = job_info
@@ -222,25 +226,27 @@ class ProgressServer(Socket):
         sleep_time = 5
         if self.callback is not None:
             self.callback.on_running()
-        while job_state == HpcJobState.Running:
+        all_ok = True
+        while job_state == HpcJobState.Running and all_ok:
             time.sleep(sleep_time)
             job_state = HpcJobManager.view(job_info.job_id)
-            if not os.path.exists(job_info.file):
-                job_state = HpcJobManager.view(job_info.job_id)
-                break
-            with open(job_info.file) as fp:
-                count = 0
-                num_of_lines = 0
-                for line in fp:
-                    num_of_lines += 1
-                    m = job_info.valid_line_reg is None or re.match(job_info.valid_line_reg, line)
-                    if m:
-                        count += 1
-                if count != pre_count:
-                    pre_count = count
+            job_files = job_info.file.split(",")
+            count = 0
+            for file in job_files:
+                if not os.path.exists(file):
+                    job_state = HpcJobManager.view(job_info.job_id)
                     if self.callback is not None:
-                        self.callback.on_update(job_info.job_id, count * 100 / job_info.total,
-                                                f"{count}/{job_info.total}")
+                        self.callback.on_error(FileNotFoundError(f"{file} not found"))
+                    all_ok = False
+                    break
+                with open(file) as fp:
+                    for line in fp:
+                        count += 1 if job_info.valid_line_reg is None or re.match(job_info.valid_line_reg, line) else 0
+            if count != pre_count:
+                pre_count = count
+                if self.callback is not None:
+                    self.callback.on_update(job_info.job_id, count * 100 / job_info.total,
+                                            f"{count}/{job_info.total}")
         if self.callback is not None:
             self.callback.on_finish(job_state)
             if job_state == HpcJobState.Finished or count == job_info.total:
