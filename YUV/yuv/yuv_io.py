@@ -1,9 +1,11 @@
-from common.com_def import Sequence, Frame, get_uv_property
-from common.com_def import BitDepth, Format
-from typing import BinaryIO, Optional, NoReturn, IO
-from abc import ABC
-import numpy as np
 import os
+from abc import ABC
+from typing import BinaryIO, Optional, NoReturn, IO, ClassVar
+
+import numpy as np
+
+from yuv.com_def import BitDepth, Format
+from yuv.com_def import Sequence, Frame, get_uv_property
 
 
 class YuvIO(object):
@@ -25,12 +27,15 @@ class YuvIO(object):
         self._frame_size_v = self._pixel_area_v << shift
         self._frame_size_yuv = self._frame_size_y + self._frame_size_u + self._frame_size_v
 
+        self.open()
+
     def open(self) -> NoReturn:
         """
         如果IO流未打开，则打开IO流
         :return:
         """
-
+        if not os.path.exists(self.sequence.path):
+            os.makedirs(self.sequence.path)
         if self.fp is None:
             self.fp: IO = open(self.sequence.full_name(), self.mode)
 
@@ -43,36 +48,25 @@ class YuvIO(object):
             self.fp.close()
             self.fp = None
 
-    def _check_open(self) -> NoReturn:
-        """
-        确保文件IO流已经打开
-        :return:
-        """
-
-        self.open()
-
     def seek(self, frames) -> NoReturn:
         """
         移动文件指针，以帧为单位移动
         :param frames: 移动的帧数，负数表示向前移动，正数表示向后移动
         :return:
         """
-        self._check_open()
-        self.fp.seek(frames * self._frame_size_yuv, os.SEEK_CUR)
+        return self.fp.seek(frames * self._frame_size_yuv, os.SEEK_CUR)
 
     def read(self) -> Frame:
-        raise NotImplementedError()
+        raise NotImplemented
 
     def write(self, frame: Frame):
-        raise NotImplementedError()
+        raise NotImplemented
 
     def frames(self) -> int:
         """
         获取当前序列的总帧数
         :return: 当前序列的总帧数
         """
-        self._check_open()
-
         # 记录原始的文件指针位置
         old_pos = self.fp.tell()
 
@@ -86,6 +80,14 @@ class YuvIO(object):
         # 计算总帧数
         return total_bytes // self._frame_size_yuv
 
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return self
+
 
 class YuvReader(YuvIO, ABC):
     def __init__(self, seq: Sequence):
@@ -96,7 +98,6 @@ class YuvReader(YuvIO, ABC):
         读取一帧图像
         :return:
         """
-        self._check_open()
 
         def read_frame(data_type):
             return Frame(self.sequence.width, self.sequence.height,
@@ -124,18 +125,18 @@ class YuvReader(YuvIO, ABC):
 class YuvWriter(YuvIO, ABC):
     def __init__(self, seq: Sequence, append: bool = False):
         if append:
-            super().__init__(seq, "ab")
+            super().__init__(seq, "ab+")
         else:
             super().__init__(seq, "wb+")
 
-    def write(self, frame: Frame) -> NoReturn:
+    def write(self, frame: Frame) -> ClassVar:
         """
         向文件写入一帧图像
         :param frame:
         :return:
         """
-        self._check_open()
         frame.buff_y.tofile(self.fp)
         if frame.fmt != Format.YUV400:
             frame.buff_u.tofile(self.fp)
             frame.buff_v.tofile(self.fp)
+        return self
