@@ -197,6 +197,7 @@ class ProgressServer(Socket):
                     # do not call cache.clear(), for it does not clear the cache in fact
                     for k in cache.keys():
                         del cache[k]
+                    cache.sync()
                     for k, v in self.states.items():
                         cache[str(k)] = v
 
@@ -209,7 +210,6 @@ class ProgressServer(Socket):
                                     end_line_reg=job_info.end_line_reg,
                                     file=job_info.file)
         sleep_time = 1
-
         # State: Configuring Running Finished Failed Canceled
         job_state: HpcJobState = HpcJobManager.view(job_info.job_id)
         while job_state == HpcJobState.Configuring or job_state == HpcJobState.Queued or job_state == HpcJobState.Submitted:
@@ -219,8 +219,7 @@ class ProgressServer(Socket):
             job_state = HpcJobManager.view(job_info.job_id)
         pre_count = 0
         count = 0
-        sleep_time = 1
-        start_time = -1
+        sleep_time = 5
         if self.callback is not None:
             self.callback.on_running()
         while job_state == HpcJobState.Running:
@@ -238,20 +237,14 @@ class ProgressServer(Socket):
                     if m:
                         count += 1
                 if count != pre_count:
-                    if start_time != -1:
-                        sleep_time = (time.time() - start_time) / 20
-                    start_time = time.time()
                     pre_count = count
                     if self.callback is not None:
                         self.callback.on_update(job_info.job_id, count * 100 / job_info.total,
                                                 f"{count}/{job_info.total}")
-                elif start_time == -1 and num_of_lines > 0:
-                    start_time = time.time()
         if self.callback is not None:
             self.callback.on_finish(job_state)
-            if count == job_info.total:
-                self.callback.on_update(job_info.job_id, 100,
-                                        f"Finished")
+            if job_state == HpcJobState.Finished or count == job_info.total:
+                self.callback.on_update(job_info.job_id, 100, f"Finished")
         ProgressServer.lock.acquire(timeout=ProgressServer.timeout)
         self.states.pop(job_info.job_id)
         cache_if_possible()

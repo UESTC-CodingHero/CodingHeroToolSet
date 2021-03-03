@@ -163,16 +163,24 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                         extra_param["skip_frames"] = skip_list[idx]
                     if gen_bin:
                         bitstream = get_name(job_name, idx, "bin", "bin")
-                        bitstream = path_join(bitstream, temp_dir)
-                        copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
+                        if par_enc:
+                            bitstream = path_join(bitstream, workdir, bin_dir)
+                            copy_bin_cmd = None
+                        else:
+                            bitstream = path_join(bitstream, temp_dir)
+                            copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
                     else:
                         bitstream = os.devnull
                         copy_bin_cmd = None
 
                     if gen_rec:
                         reconstruction = get_name(job_name, idx, "rec", "yuv")
-                        reconstruction = path_join(reconstruction, temp_dir)
-                        copy_rec_cmd = copy_del_rename(reconstruction, rec_dir, None, local=local)
+                        if par_enc:
+                            reconstruction = path_join(reconstruction, workdir, rec_dir)
+                            copy_rec_cmd = None
+                        else:
+                            reconstruction = path_join(reconstruction, temp_dir)
+                            copy_rec_cmd = copy_del_rename(reconstruction, rec_dir, None, local=local)
                     else:
                         reconstruction = os.devnull
                         copy_rec_cmd = None
@@ -193,19 +201,20 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
 
                 if par_enc and gen_bin and len(bitstream_list) > 1 and "-i" in merger_command:
                     bitstream = get_name(job_name, -1, "bin", "bin")
-                    bitstream = path_join(bitstream, temp_dir)
+                    bitstream = path_join(bitstream, workdir, bin_dir)
                     t = re.findall(r"-i\s+{}", merger_command)[0]
                     merger_cmd = merger_command.replace(t, " ".join([t] * len(bitstream_list)))
                     merger_cmd = merger_cmd.format(*bitstream_list, bitstream)
-                    copy_bin_cmd = copy_del_rename(bitstream, bin_dir, None, local=local)
-                    copy_bin_cmd_list.append(copy_bin_cmd)
                 else:
                     merger_cmd = None
                 if gen_bin and gen_dec:
                     decode = get_name(job_name, -1, "dec", "yuv")
                     decode = path_join(decode, temp_dir)
                     decoder_cmd = decoder_command.format(bitstream, decode)
-                    copy_dec_cmd = copy_del_rename(decode, dec_dir, None, local=local)
+                    if par_enc:
+                        copy_dec_cmd = None
+                    else:
+                        copy_dec_cmd = copy_del_rename(decode, dec_dir, None, local=local)
                 else:
                     decoder_cmd = None
                     copy_dec_cmd = None
@@ -218,6 +227,8 @@ def main_codec(seq_info: list, qp_list: list, mode: Mode,
                             copy_dec_cmd, copy_bin_cmd_list]
                 for i, (prefix, cmd) in enumerate(zip(prefixes, commands)):
                     prefix = prefix.value
+                    if cmd is None:
+                        continue
                     if isinstance(cmd, str) and len(cmd) > 0:
                         if prefix is None or len(prefix) == 0:
                             stdout = None
