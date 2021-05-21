@@ -1,4 +1,4 @@
-HPC 项目说明 (以弃用, 请参考[RCodec](../RCodec), [RHPC](../RHPC), [RProgress](../RProgress))
+HPC 项目说明 (已弃用, 请参考[RCodec](../RCodec), [RHPC](../RHPC), [RProgress](../RProgress))
 ----
 SimpleHPC 主要是用于封装对 [MicroSoft HPC] 集群简单添加任务功能。
 
