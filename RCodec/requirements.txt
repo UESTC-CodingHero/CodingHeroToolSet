@@ -1,0 +1,4 @@
+hpc~=1.0
+hpc_progress~=1.0
+openpyxl~=3.0.5
+setuptools~=41.2.0
