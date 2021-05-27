@@ -97,7 +97,7 @@ class Excel(object):
 
 
 _RAW_DATA_SHEETS = xl.load_workbook(TEMPLATE).sheetnames
-_RAW_DATA_COL = ['B', 'D']
+_RAW_DATA_COL = ['A', 'B']
 
 
 class ExcelHelper(object):
@@ -209,14 +209,27 @@ class ExcelHelper(object):
         col_start = column_index_from_string(_RAW_DATA_COL[1])
         cols = len(PatKey.summary_patterns() + PatKey.summary_patterns_dec())
         for seq_id, seq in enumerate(seqs):
-            for qp in qps:
-                if (row - row_start) % len(qps) == 0:
+            for qp_index, qp in enumerate(qps):
+                if qp_index == 0:
                     m = re.match(r"(\w+)_(\d+x\d+.*)", seq)
                     if m:
                         sheet.cell(row=row, column=column_index_from_string('A'), value=m.group(2))
                         sheet.cell(row=row, column=column_index_from_string('B'), value=m.group(1))
                     else:
                         sheet.cell(row=row, column=column_index_from_string('B'), value=seq)
+
+                    sheet.cell(row=row, column=column_index_from_string('V'),
+                               value=f"=bdrate($D{row}:$D{row + 3},E{row}:E{row + 3},$L{row}:$L{row + 3},M{row}:M{row + 3})")
+                    sheet.cell(row=row, column=column_index_from_string('W'),
+                               value=f"=bdrate($D{row}:$D{row + 3},F{row}:F{row + 3},$L{row}:$L{row + 3},N{row}:N{row + 3})")
+                    sheet.cell(row=row, column=column_index_from_string('X'),
+                               value=f"=bdrate($D{row}:$D{row + 3},G{row}:G{row + 3},$L{row}:$L{row + 3},O{row}:O{row + 3})")
+                    sheet.cell(row=row, column=column_index_from_string('Y'),
+                               value=f"=bdrateOld($D{row}:$D{row + 3},E{row}:E{row + 3},$L{row}:$L{row + 3},M{row}:M{row + 3})")
+                    sheet.cell(row=row, column=column_index_from_string('Z'),
+                               value=f"=bdrateOld($D{row}:$D{row + 3},F{row}:F{row + 3},$L{row}:$L{row + 3},N{row}:N{row + 3})")
+                    sheet.cell(row=row, column=column_index_from_string('AA'),
+                               value=f"=bdrateOld($D{row}:$D{row + 3},G{row}:G{row + 3},$L{row}:$L{row + 3},O{row}:O{row + 3})")
 
                 sheet.cell(row, column_index_from_string("C"), qp)
                 for i, base_c in enumerate(['D', 'L']):
@@ -229,6 +242,12 @@ class ExcelHelper(object):
                     # 将编码时间转化为小时为单位
                     cell: Cell = sheet.cell(row, base + cols)
                     cell.value = f"={cell.offset(row == 0, column=-2).coordinate}/3600"
+
+                cell: Cell = sheet.cell(row, column_index_from_string('S'))
+                cell.value = f"={cell.offset(row == 0, column=-10).coordinate}/{cell.offset(row == 0, column=-3).coordinate}"
+
+                cell: Cell = cell.offset(row=0, column=1)
+                cell.value = f"={cell.offset(row == 0, column=-10).coordinate}/{cell.offset(row == 0, column=-3).coordinate}"
 
                 # 拷贝样式：向上偏移4行。注意：第一个序列所在的Cell的样式已从模板文件拷贝
                 if seq_id != 0:
