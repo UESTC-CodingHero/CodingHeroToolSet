@@ -1,5 +1,7 @@
 from enum import Enum
 import os
+
+import cv2
 import numpy as np
 import re
 from typing import Optional, Union
@@ -189,6 +191,30 @@ class Frame(Region, MetaData):
                 region = Region(x, y, ctu_size, ctu_size)
                 ctu.append(self.roi(region))
         return ctu
+
+    def save(self, file_name):
+        if self.fmt == Format.YUV420:
+            u = np.reshape(self.buff_u, (self.buff_u.size // self.width, self.width))
+            v = np.reshape(self.buff_v, (self.buff_v.size // self.width, self.width))
+            yuv = np.concatenate([self.buff_y, u, v])
+            flag = cv2.COLOR_YUV2BGR_I420
+        elif self.fmt == Format.YUV422:
+            u = cv2.resize(self.buff_u, (self.width, self.height))
+            v = cv2.resize(self.buff_v, (self.width, self.height))
+            yuv = np.array([self.buff_y, u, v])
+            yuv = np.swapaxes(yuv, 0, 1)
+            yuv = np.swapaxes(yuv, 1, 2)
+            flag = cv2.COLOR_YUV2BGR
+        elif self.fmt == Format.YUV444:
+            yuv = np.array([self.buff_y, self.buff_u, self.buff_v])
+            yuv = np.swapaxes(yuv, 0, 1)
+            yuv = np.swapaxes(yuv, 1, 2)
+            flag = cv2.COLOR_YUV2BGR
+        else:  # self.fmt == Format.YUV400:
+            yuv = self.buff_y
+            flag = None
+        image = cv2.cvtColor(yuv, flag) if flag else yuv
+        cv2.imwrite(file_name, image)
 
 
 class Sequence(Region, MetaData):

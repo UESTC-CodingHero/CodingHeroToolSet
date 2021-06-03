@@ -151,84 +151,71 @@ class MotionEstimate(object):
 
 class Mask(object):
     @staticmethod
-    def add_line_hor(frame: Frame, y: int, x0: int, x1: int, color_rgb: tuple = (255, 255, 255),
-                     line_width: int = 1):
+    def _add_colored_points(frame: Frame, points: list, color_yuv: tuple):
         scale = frame.bit_depth.value - 8
-        yuv = Converter.rgb2yuv(color_rgb)
-        yuv = np.array(yuv) << scale
+        yuv = np.array(color_yuv) << scale
 
-        y_uv = y >> 1
-
-        line_width = max(1, line_width)
-        line_width_uv = max(1, line_width >> 1)
-
-        frame.buff_y[y:y + line_width, x0:x1] = yuv[0]
-        frame.buff_u[y_uv: y_uv + line_width_uv, x0:x1] = yuv[1]
-        frame.buff_v[y_uv: y_uv + line_width_uv, x0:x1] = yuv[2]
+        for point in points:
+            x, y = point
+            if x < 0 or y < 0 or x >= frame.width or y >= frame.height:
+                continue
+            frame.buff_y[y, x] = yuv[0]
+            frame.buff_u[y >> 1, x >> 1] = yuv[1]
+            frame.buff_v[y >> 1, x >> 1] = yuv[2]
 
     @staticmethod
-    def add_line_ver(frame: Frame, x: int, y0: int, y1: int, color_rgb: tuple = (255, 255, 255),
-                     line_width: int = 1):
-        scale = frame.bit_depth.value - 8
-        yuv = Converter.rgb2yuv(color_rgb)
-        yuv = np.array(yuv) << scale
-
+    def _calc_line_width(line_width: int):
         line_width = max(1, line_width)
-        line_width_uv = max(1, line_width >> 1)
-
-        x_uv = x >> 1
-        frame.buff_y[y0:y1, x:x + line_width] = yuv[0]
-        frame.buff_u[y0:y1, x_uv:x_uv + line_width_uv] = yuv[1]
-        frame.buff_v[y0:y1, x_uv:x_uv + line_width_uv] = yuv[2]
+        half_line_width_0 = (line_width - 1) >> 1
+        half_line_width_1 = line_width - half_line_width_0
+        return line_width, half_line_width_0, half_line_width_1
 
     @staticmethod
-    def add_grid(frame: Frame, grid_width: int, grid_height: int, color_rgb: tuple = (255, 255, 255),
-                 line_width: int = 1, region: Region = None):
+    def draw_line_hor(frame: Frame, y: int, x0: int, x1: int, color_rgb: tuple = (255, 255, 255), line_width: int = 1):
+        line_width, half_line_width_0, half_line_width_1 = Mask._calc_line_width(line_width)
+        points = list()
+        y_range = (y - half_line_width_0, y + half_line_width_1)
+        for y in range(*y_range):
+            for x in range(x0, x1):
+                points.append((x, y))
+        Mask._add_colored_points(frame, points=points, color_yuv=Converter.rgb2yuv(color_rgb))
+
+    @staticmethod
+    def draw_line_ver(frame: Frame, x: int, y0: int, y1: int, color_rgb: tuple = (255, 255, 255), line_width: int = 1):
+        line_width, half_line_width_0, half_line_width_1 = Mask._calc_line_width(line_width)
+        points = list()
+        x_range = (x - half_line_width_0, x + half_line_width_1)
+        for y in range(y0, y1):
+            for x in range(*x_range):
+                points.append((x, y))
+        Mask._add_colored_points(frame, points=points, color_yuv=Converter.rgb2yuv(color_rgb))
+
+    @staticmethod
+    def draw_grid(frame: Frame, grid_width: int, grid_height: int, color_rgb: tuple = (255, 255, 255),
+                  line_width: int = 1, region: Region = None):
         if region is None:
             region = Region(0, 0, frame.width, frame.height)
-        scale_uv = frame.uv_scale()
-        region_uv = Region(region.x >> scale_uv[0], region.y >> scale_uv[1],
-                           region.width >> scale_uv[0], region.height >> scale_uv[1])
+        for h in range(0, region.height // grid_height + 1):
+            Mask.draw_line_hor(frame, region.y + h * grid_height, region.x, region.x + region.width, color_rgb,
+                               line_width)
+        for w in range(0, region.width // grid_width + 1):
+            Mask.draw_line_ver(frame, region.x + w * grid_width, region.y, region.y + region.height, color_rgb,
+                               line_width)
 
-        # rgb 2 yuv
-        scale = frame.bit_depth.value - 8
-        yuv = Converter.rgb2yuv(color_rgb)
-        yuv = np.array(yuv) << scale
+    @staticmethod
+    def draw_border(frame: Frame, color_rgb: tuple = (255, 255, 255), line_width: int = 1):
+        Mask.draw_grid(frame, frame.width - line_width, frame.height - line_width, color_rgb, line_width)
 
-        # TODO: fix
-        line_width = max(1, line_width)
-        line_width_uv = max(1, line_width >> scale_uv[1])
-        for y in range(region.y, region.y + region.height + 1, grid_height):
-            y_uv = y >> scale_uv[1]
-            y -= line_width >> 1
-            diff_y = 0 if y > region.y else region.y - y
-            y = max(region.y, y)
-            y_uv -= line_width_uv >> 1
-            diff_y_uv = 0 if y_uv > region_uv.y else region_uv.y - y_uv
-            y_uv = max(region_uv.y, y_uv)
-
-            frame.buff_y[y:min(y + line_width - diff_y, region.y + region.height),
-            region.x:region.x + region.width - (line_width >> 1)] = yuv[0]
-            frame.buff_u[y_uv: min(y_uv + line_width_uv - diff_y_uv, region_uv.y + region_uv.height),
-            region_uv.x:region_uv.x + region_uv.width - (line_width_uv >> 1)] = yuv[1]
-            frame.buff_v[y_uv: min(y_uv + line_width_uv - diff_y_uv, region_uv.y + region_uv.height),
-            region_uv.x:region_uv.x + region_uv.width - (line_width_uv >> 1)] = yuv[2]
-
-        line_width_uv = max(1, line_width >> scale_uv[0])
-        for x in range(region.x, region.x + region.width + 1, grid_width):
-            x_uv = x >> scale_uv[0]
-            x -= line_width >> 1
-            diff_x = 0 if x > region.x else region.x - x
-            x = max(region.x, x)
-            x_uv -= line_width_uv >> 1
-            diff_x_uv = 0 if x_uv > region_uv.x else region_uv.x - x
-            x_uv = max(region_uv.x, x_uv)
-            frame.buff_y[region.y:region.y + region.height - (line_width >> 1),
-            x:min(x + line_width - diff_x, region.x + region.width)] = yuv[0]
-            frame.buff_u[region_uv.y:region_uv.y + region_uv.height - (line_width_uv >> 1),
-            x_uv:min(x_uv + line_width_uv - diff_x_uv, region_uv.x + region_uv.width)] = yuv[1]
-            frame.buff_v[region_uv.y:region_uv.y + region_uv.height - (line_width_uv >> 1),
-            x_uv:min(x_uv + line_width_uv - diff_x_uv, region_uv.x + region_uv.width)] = yuv[2]
+    @staticmethod
+    def draw_frame_with_sub_frame(frame: Frame, sub_frame: Frame, x: int, y: int):
+        pos_x, pos_y = x, y
+        for y in range(0, sub_frame.height):
+            for x in range(0, sub_frame.width):
+                color = (sub_frame.buff_y[y, x],
+                         sub_frame.buff_u[y >> 1, x >> 1],
+                         sub_frame.buff_v[y >> 1, x >> 1],
+                         )
+                Mask._add_colored_points(frame, [(x + pos_x, y + pos_y)], color)
 
 
 class Scaler(object):
