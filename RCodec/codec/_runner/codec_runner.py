@@ -3,7 +3,7 @@ import os
 import sys
 import tempfile
 from enum import Enum
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from concurrent.futures import ProcessPoolExecutor, wait
 
 from hpc.helper import mkdir, rmdir, path_join, get_hash
@@ -260,7 +260,8 @@ class Codec(object):
     def execute(self, seq_info: list, qp: int, job_cfg: HpcJobConfig, extra_param: dict) -> int:
         """
         执行编解码任务
-        :param seq_info: 序列信息. [name, width, height, fps, bits, frames, intra_period, temporal_sampling, skip, dir]
+        :param seq_info: 序列信息. FULL用于指定name是否为全称
+              [name, width, height, fps, bits, frames, intra_period, temporal_sampling, skip, dir, <FULL>]
         :param qp: 量化参数
         :param job_cfg: hpc job的信息， 见class HpcJobConfig
         :param extra_param: 额外的参数
@@ -275,11 +276,18 @@ class Codec(object):
             self.decoder = self._check(self.merger)
         extra_param[ParamType.CfgEncoder] = self._check(extra_param.get(ParamType.CfgEncoder))
         extra_param[ParamType.CfgSequence] = self._check(extra_param.get(ParamType.CfgSequence))
-
-        _, width, height, fps, bit_depth, frames, ip, ts, skip, seq_dir = seq_info
+        if len(seq_info) == 10:
+            s_name, width, height, fps, bit_depth, frames, ip, ts, skip, seq_dir = seq_info
+            is_full = False
+        else:
+            assert len(seq_info) == 11
+            s_name, width, height, fps, bit_depth, frames, ip, ts, skip, seq_dir, is_full = seq_info
         name = Codec.uni_name(seq_info)
         extra_param["name"] = name
         mem = memory(width, height)
+
+        if not is_full:
+            s_name = name
 
         name_qp = f"{name}_{qp}"
         job_name = f"{self.task_desc_prefix}_{name_qp}"
@@ -345,7 +353,7 @@ class Codec(object):
                     ParamType.CfgEncoder: extra_param.get(ParamType.CfgEncoder),
                     ParamType.CfgSequence: extra_param.get(ParamType.CfgSequence),
 
-                    ParamType.Sequence: path_join(name + '.yuv', seq_dir),
+                    ParamType.Sequence: path_join(s_name + '.yuv', seq_dir),
                     ParamType.Width: width,
                     ParamType.Height: height,
                     ParamType.Fps: fps,
@@ -583,7 +591,7 @@ class Codec(object):
     def go(self, encoder: str, decoder: Optional[str], merger: Optional[str],
            mode: Mode, who: str, email: str,
            gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool,
-           qp_list: list, seq_info: list,
+           qp_list: List[int], seq_info: List[List],
            cores: int, nodes: Optional[str], groups: str, priority: int,
            cfg: str, cfg_seq: Optional[Dict[str, str]], extra_param: Optional[str], with_hash: bool = True):
         """
