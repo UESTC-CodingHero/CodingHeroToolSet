@@ -4,8 +4,8 @@ from typing import BinaryIO, Optional, NoReturn, IO, ClassVar
 
 import numpy as np
 
-from yuv.com_def import BitDepth, Format
-from yuv.com_def import Sequence, Frame, get_uv_property
+from yuv.com_def import BitDepth, Format, Component
+from yuv.com_def import Sequence, Frame, _get_uv_wh
 
 
 class YuvIO(object):
@@ -15,7 +15,7 @@ class YuvIO(object):
         self.mode: str = mode
         self.fp: Optional[BinaryIO] = None
         # set the size for each plane
-        uv_w, uv_h = get_uv_property(seq.width, seq.height, seq.fmt)
+        uv_w, uv_h = _get_uv_wh(seq.width, seq.height, seq.fmt)
         self._pixel_area_y = seq.width * seq.height
         self._pixel_area_u = uv_w * uv_h
         self._pixel_area_v = self._pixel_area_u
@@ -135,8 +135,8 @@ class YuvWriter(YuvIO, ABC):
         :param frame:
         :return:
         """
-        frame.buff_y.tofile(self.fp)
+        frame[Component.COMP_Y].get().tofile(self.fp)
         if frame.fmt != Format.YUV400:
-            frame.buff_u.tofile(self.fp)
-            frame.buff_v.tofile(self.fp)
+            frame[Component.COMP_U].get().tofile(self.fp)
+            frame[Component.COMP_V].get().tofile(self.fp)
         return self

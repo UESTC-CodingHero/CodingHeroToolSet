@@ -1,10 +1,12 @@
-from typing import List, NoReturn, Optional, Union
-from yuv.com_def import Region, MetaData, Frame, Sequence, Format
-from yuv.yuv_io import YuvReader, YuvWriter
-import numpy as np
 import copy
 from enum import Enum
+from typing import List, NoReturn, Optional, Union
+
 import cv2
+import numpy as np
+
+from yuv.com_def import Region, MetaData, Plane, Frame, Sequence, Format, Component
+from yuv.yuv_io import YuvReader, YuvWriter
 
 
 class Converter(object):
@@ -59,7 +61,8 @@ class Concat(object):
                 for frame in _frames:
                     frame: Frame = frame
                     if pre_frame is not None:
-                        assert MetaData(frame) == MetaData(pre_frame)
+                        assert frame.width == pre_frame.width
+                        assert frame.height == pre_frame.height
                     pre_frame = frame
 
         check_res()
@@ -140,13 +143,38 @@ class MotionEstimate(object):
         DIAM = 2
 
     @staticmethod
-    def me(frame: Frame, region: Region, ref_frame: Frame, search_range: int = None, method: Method = Method.FULL):
-        region_in_ref = copy.copy(region)
-        region_in_ref.x -= search_range
-        region_in_ref.y -= search_range
-        region_in_ref.width = search_range << 1
-        region_in_ref.height = search_range << 1
-        ref_frame.ensure_roi(region_in_ref)
+    def _full_me(unit: np.ndarray, ref: np.ndarray, center=None):
+        height, width = ref.shape
+        uh, uw = unit.shape
+        assert uh <= height
+        assert uw <= width
+        dist = 1 << 32
+        for h in range(height - uh):
+            for w in range(width - uw):
+                pass
+
+    @staticmethod
+    def _step3_me(unit: np.ndarray, ref: np.ndarray, center=None):
+        pass
+
+    @staticmethod
+    def _diam_me(unit: np.ndarray, ref: np.ndarray, center=None):
+        pass
+
+    @staticmethod
+    def me(plane: Plane, region: Region, ref_plane: Plane, search_range: int = None, method: Method = Method.FULL):
+        region = copy.copy(region)
+        region.x -= search_range
+        region.y -= search_range
+        region.width = search_range << 1
+        region.height = search_range << 1
+        ref_plane.ensure_roi(region)
+        funcs = {
+            MotionEstimate.Method.FULL: MotionEstimate._full_me,
+            MotionEstimate.Method.STEP3: MotionEstimate._step3_me,
+            MotionEstimate.Method.DIAM: MotionEstimate._diam_me,
+        }
+        return funcs[method](plane.get(), ref_plane.get(), region)
 
 
 class Mask(object):
@@ -159,9 +187,9 @@ class Mask(object):
             x, y = point
             if x < 0 or y < 0 or x >= frame.width or y >= frame.height:
                 continue
-            frame.buff_y[y, x] = yuv[0]
-            frame.buff_u[y >> 1, x >> 1] = yuv[1]
-            frame.buff_v[y >> 1, x >> 1] = yuv[2]
+            frame.get(Component.COMP_Y).get()[y, x] = yuv[0]
+            frame.get(Component.COMP_U).get()[y >> 1, x >> 1] = yuv[1]
+            frame.get(Component.COMP_V).get()[y >> 1, x >> 1] = yuv[2]
 
     @staticmethod
     def _calc_line_width(line_width: int):
@@ -211,9 +239,9 @@ class Mask(object):
         pos_x, pos_y = x, y
         for y in range(0, sub_frame.height):
             for x in range(0, sub_frame.width):
-                color = (sub_frame.buff_y[y, x],
-                         sub_frame.buff_u[y >> 1, x >> 1],
-                         sub_frame.buff_v[y >> 1, x >> 1],
+                color = (sub_frame[Component.COMP_Y].get()[y, x],
+                         sub_frame[Component.COMP_U].get()[y >> 1, x >> 1],
+                         sub_frame[Component.COMP_V].get()[y >> 1, x >> 1],
                          )
                 Mask._add_colored_points(frame, [(x + pos_x, y + pos_y)], color)
 
@@ -221,15 +249,14 @@ class Mask(object):
 class Scaler(object):
     @staticmethod
     def scale(frame: Frame, scale: Union[float, int]):
-        h, w = frame.buff_y.shape
+        h, w = frame.height, frame.width
         h, w = int(h * scale + 0.5), int(w * scale + 0.5)
         h, w = h >> 1 << 1, w >> 1 << 1
-        y = cv2.resize(frame.buff_y, (w, h))
-        print(h, w)
+        y = cv2.resize(frame[Component.COMP_Y].get(), (w, h))
         u = v = None
         if frame.fmt != Format.YUV400:
-            u = cv2.resize(frame.buff_u, (w >> frame.uv_scale()[0], h >> frame.uv_scale()[1]))
-            v = cv2.resize(frame.buff_v, (w >> frame.uv_scale()[0], h >> frame.uv_scale()[1]))
+            u = cv2.resize(frame[Component.COMP_U].get(), (w >> frame.uv_scale()[0], h >> frame.uv_scale()[1]))
+            v = cv2.resize(frame[Component.COMP_V].get(), (w >> frame.uv_scale()[0], h >> frame.uv_scale()[1]))
         return Frame(width=w, height=h, bit_depth=frame.bit_depth, fmt=frame.fmt, buff_y=y, buff_u=u, buff_v=v)
 
 
