@@ -7,6 +7,7 @@ from typing import Union, Dict, Optional
 from ._runner.codec_runner import Codec
 from .cfg import TEMPLATE_CONFIG
 from .common import ParamType, PatKey, ConfigKey
+from ._runner.codec_cfg import Encoder, Decoder, Merger
 
 
 class SupportedCodec(object):
@@ -52,7 +53,8 @@ class SupportedCodec(object):
             if SupportedCodec._codecs.get(codec.name) is None:
                 SupportedCodec._codecs[codec.name] = codec
                 setattr(SupportedCodec, codec.name, codec)
-                ok = codec.pattern.get(PatKey.Summary_Psnr_Y) or codec.param_key.get(ParamType.Sequence)
+                ok = codec.encoder_cfg.pattern.get(PatKey.Summary_Psnr_Y) or \
+                     codec.encoder_cfg.param_key.get(ParamType.Sequence)
                 return ok is not None
         elif isinstance(codec, str) and os.path.exists(codec):
             with open(codec, encoding="UTF-8") as fp:
@@ -67,7 +69,18 @@ class SupportedCodec(object):
                         return SupportedCodec.register_codec(locals().get(temp_var_name))
                     elif i == 0 and line.strip().startswith('{'):
                         fp.seek(0, os.SEEK_SET)
-                        codec = Codec(**json.loads(fp.read()))
+                        cfg = json.loads(fp.read())
+                        encoder = cfg.get("encoder")
+                        decoder = cfg.get("decoder")
+                        merger = cfg.get("merger")
+                        if merger is not None:
+                            codec = Codec(encoder=Encoder(**encoder),
+                                          decoder=Decoder(**decoder),
+                                          merger=Merger(**merger))
+                        else:
+                            codec = Codec(encoder=Encoder(**encoder),
+                                          decoder=Decoder(**decoder),
+                                          merger=None)
                         return SupportedCodec.register_codec(codec)
         return False
 
@@ -122,3 +135,27 @@ class SupportedCodec(object):
             if _codec_name == name:
                 return codec
         return None
+
+    @staticmethod
+    def dump():
+        keys = [
+            ConfigKey.CFG_DIR,
+            ConfigKey.CFG_PAT,
+            ConfigKey.TMP_DIR,
+            ConfigKey.BIN_DIR,
+            ConfigKey.REC_DIR,
+            ConfigKey.DEC_DIR,
+            ConfigKey.STDOUT_DIR,
+            ConfigKey.STDERR_DIR,
+            ConfigKey.PREFIX_ENCODE,
+            ConfigKey.PREFIX_DECODE,
+            ConfigKey.SUFFIX_STDOUT,
+            ConfigKey.SUFFIX_STDERR,
+        ]
+        for key in keys:
+            v = SupportedCodec.__getattribute__(SupportedCodec, key)
+            print(key, ":", v)
+        print("Supported Codecs: ", end="[")
+        for name, codec in SupportedCodec._codecs.items():
+            print(name, end=", ")
+        print("]")

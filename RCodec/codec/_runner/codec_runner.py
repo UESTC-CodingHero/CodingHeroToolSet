@@ -12,6 +12,7 @@ from progress.lib.handler import ProgressManager, ProgressServerJobInfo
 
 from ..common import Mode, ParamType, PatKey, ConfigKey, LoggerOutputType, TaskType
 from .codec_util import copy_del_rename, memory
+from .codec_cfg import Encoder, Decoder, Merger, ParamExe
 
 
 class _Prefix(Enum):
@@ -145,6 +146,10 @@ _DEFAULT_PAT = ".+"
 
 class Codec(object):
 
+    @property
+    def name(self):
+        return self.encoder_cfg.name
+
     def _check(self, file):
         """
         从脚本所在目录或者工作目录检查给定的文件是否存在
@@ -162,38 +167,14 @@ class Codec(object):
                     raise FileNotFoundError(f"请检查文件是否存在: {path_join(file, self.info.work_dir)}")
         return file
 
-    def __init__(self, name: str,
-                 param_key: Optional[dict] = None,
-                 suffix: str = _DEFAULT_SUF,
-                 log_dir_type: str = _DEFAULT_DIR,
-                 p_log_line: str = _DEFAULT_PAT,
-                 p_summary_psnr_y: str = _DEFAULT_PAT,
-                 p_summary_psnr_u: str = _DEFAULT_PAT,
-                 p_summary_psnr_v: str = _DEFAULT_PAT,
-                 p_summary_bitrate: str = _DEFAULT_PAT,
-                 p_summary_encode_time: str = _DEFAULT_PAT,
-                 p_summary_decode_time: str = _DEFAULT_PAT):
-        self.name = name
-        self.param_key = param_key if param_key else _DEFAULT_DICT
-        self.suffix = suffix
-        self.log_dir_type = log_dir_type
+    def __init__(self, encoder: Encoder, decoder: Decoder, merger: Optional[Merger]):
+        self.encoder_exe: str = ""
+        self.decoder_exe: str = ""
+        self.merger_exe: str = ""
+        self.encoder_cfg = encoder
+        self.decoder_cfg = decoder
+        self.merger_cfg = merger
 
-        self.pattern = dict()
-        self.pattern[PatKey.Line_Psnr_Y] = p_log_line
-        self.pattern[PatKey.Line_Psnr_U] = p_log_line
-        self.pattern[PatKey.Line_Psnr_V] = p_log_line
-        self.pattern[PatKey.Line_Bit] = p_log_line
-        self.pattern[PatKey.Line_Time] = p_log_line
-        self.pattern[PatKey.Summary_Psnr_Y] = p_summary_psnr_y
-        self.pattern[PatKey.Summary_Psnr_U] = p_summary_psnr_u
-        self.pattern[PatKey.Summary_Psnr_V] = p_summary_psnr_v
-        self.pattern[PatKey.Summary_Bitrate] = p_summary_bitrate
-        self.pattern[PatKey.Summary_Encode_Time] = p_summary_encode_time
-        self.pattern[PatKey.Summary_Decode_Time] = p_summary_decode_time
-
-        self.encoder: str = ""
-        self.decoder: str = ""
-        self.merger: str = ""
         self.info: Optional[_PrepareInfo] = None
         self.task_desc_prefix: str = ""
 
@@ -202,21 +183,21 @@ class Codec(object):
 
     def prepare(self, encoder, decoder, merger, mode: Mode, who: str, email: str, hashcode: bool,
                 gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool):
-        self.encoder = encoder
-        self.decoder = decoder
-        self.merger = merger
+        self.encoder_exe = encoder
+        self.decoder_exe = decoder
+        self.merger_exe = merger
         self.info = _PrepareInfo(mode=mode, who=who, email=email,
                                  gen_bin=gen_bin, gen_rec=gen_rec, gen_dec=gen_dec, par_enc=par_enc)
         if hashcode:
             try:
-                seed = self._check(self.encoder)
+                seed = self._check(self.encoder_exe)
             except FileNotFoundError:
                 seed = None
             self.task_desc_prefix = f"{who}_{get_hash(seed=seed)}_{mode.value}"
         else:
             self.task_desc_prefix = f"{who}_{mode.value}"
 
-    def _concat_command(self, param: dict):
+    def _concat_command(self, param: dict, param_exe: ParamExe):
         """
         将参数字典拼接成命令行参数的格式
 
@@ -241,13 +222,13 @@ class Codec(object):
                 continue
             if isinstance(v, list) or isinstance(v, tuple):
                 for vv in v:
-                    if self.param_key.get(k) is not None:
-                        cmd = f"{cmd} {self.param_key[k]}{vv}"
+                    if param_exe.param_key.get(k) is not None:
+                        cmd = f"{cmd} {param_exe.param_key[k]}{vv}"
                     elif v:
                         cmd = f"{cmd} {vv}"
             else:
-                if self.param_key.get(k) is not None:
-                    cmd = f"{cmd} {self.param_key[k]}{v}"
+                if param_exe.param_key.get(k) is not None:
+                    cmd = f"{cmd} {param_exe.param_key[k]}{v}"
                 elif v:
                     cmd = f"{cmd} {v}"
         return cmd
@@ -269,11 +250,11 @@ class Codec(object):
         """
         # 创建必要的目录
         self.info.ensure_dirs()
-        self.encoder = self._check(self.encoder)
+        self.encoder_exe = self._check(self.encoder_exe)
         if self.info.gen_dec:
-            self.decoder = self._check(self.decoder)
+            self.decoder_exe = self._check(self.decoder_exe)
         if self.info.par_enc:
-            self.decoder = self._check(self.merger)
+            self.decoder_exe = self._check(self.merger_exe)
         extra_param[ParamType.CfgEncoder] = self._check(extra_param.get(ParamType.CfgEncoder))
         extra_param[ParamType.CfgSequence] = self._check(extra_param.get(ParamType.CfgSequence))
         if len(seq_info) == 10:
@@ -341,7 +322,7 @@ class Codec(object):
                 # 设置输出码流名字及拷贝码流的命令
                 bitstream, copy_bin_cmd = get_name_cmd(self.info.gen_bin,
                                                        ConfigKey.BIN_DIR,
-                                                       idx, None, self.suffix)
+                                                       idx, None, self.encoder_cfg.suffix)
 
                 # 设置重构的名字及拷贝重构的命令
                 reconstruction, copy_rec_cmd = get_name_cmd(self.info.gen_rec,
@@ -367,7 +348,7 @@ class Codec(object):
                     ParamType.SkipFrames: skip_list[idx],
                     ParamType.ExtraParam: extra_param.get(ParamType.ExtraParam)
                 }
-                encoder_cmd = f"{self.encoder} {self._concat_command(encode_params)}"
+                encoder_cmd = f"{self.encoder_exe} {self._concat_command(encode_params, self.encoder_cfg)}"
 
                 # 保存这些命令
                 copy_bin_cmd_list.append(copy_bin_cmd)
@@ -381,28 +362,28 @@ class Codec(object):
             if self.info.par_enc and self.info.gen_bin and len(bitstream_list) > 1:
                 bitstream = self.info.get_name(name_qp, None,
                                                prefix=None,
-                                               suffix=self.suffix)
+                                               suffix=self.encoder_cfg.suffix)
                 bitstream = path_join(bitstream, self.info.sub_dirs[ConfigKey.BIN_DIR])
-                encode_params = {
+                merge_params = {
                     ParamType.MergeInBitStream: bitstream_list,
                     ParamType.MergeOutBitStream: bitstream,
                 }
-                merger_cmd = f"{self.merger} {self._concat_command(encode_params)}"
+                merger_cmd = f"{self.merger_exe} {self._concat_command(merge_params, self.merger_cfg)}"
             else:
                 merger_cmd = None
 
             # 构建解码命令及拷贝解码文件至管理节点的命令
-            if self.info.gen_bin and self.decoder:
+            if self.info.gen_bin and self.decoder_exe:
                 decode = os.devnull
                 if self.info.gen_dec:
                     decode = self.info.get_name(name_qp, None,
                                                 prefix=self.info.prefixes[ConfigKey.PREFIX_DECODE], suffix="yuv")
                     decode = path_join(decode, self.info.temp_dir)
-                encode_params = {
+                decode_params = {
                     ParamType.DecodeYUV: decode,
                     ParamType.InBitStream: bitstream
                 }
-                decoder_cmd = f"{self.decoder} {self._concat_command(encode_params)}"
+                decoder_cmd = f"{self.decoder_exe} {self._concat_command(decode_params, self.decoder_cfg)}"
                 if self.info.par_enc:
                     copy_dec_cmd = None
                 else:
@@ -482,21 +463,20 @@ class Codec(object):
                     for i in range(rcs):
                         track_f = path_join(self.info.get_name(name_qp, i,
                                                                self.info.prefixes[ConfigKey.PREFIX_ENCODE],
-                                                               self.info.suffixes[self.log_dir_type]),
-                                            self.info.sub_dirs[self.log_dir_type])
+                                                               self.info.suffixes[self.encoder_cfg.log_dir_type]),
+                                            self.info.sub_dirs[self.encoder_cfg.log_dir_type])
                         if track_file is None:
                             track_file = track_f
                         else:
                             track_file = f"{track_file},{track_f}"
                 else:
-
                     track_file = path_join(self.info.get_name(name_qp, -1,
                                                               self.info.prefixes[ConfigKey.PREFIX_ENCODE],
-                                                              self.info.suffixes[self.log_dir_type]),
-                                           self.info.sub_dirs[self.log_dir_type])
+                                                              self.info.suffixes[self.encoder_cfg.log_dir_type]),
+                                           self.info.sub_dirs[self.encoder_cfg.log_dir_type])
                 job_info = ProgressServerJobInfo(job_id,
                                                  (frames + ts - 1 + rcs - 1) // ts,
-                                                 self.pattern[PatKey.Line_Psnr_Y],
+                                                 self.encoder_cfg.pattern[PatKey.Line_Psnr_Y],
                                                  track_file)
                 self.info.progress_backend.notice(job_info)
         return job_id
@@ -511,8 +491,8 @@ class Codec(object):
         from .._logger.scanner import LogScanner
         from .._logger.excel_handler import ExcelHelper
         scanner = LogScanner(codec=self,
-                             enc_log_dir=self.info.sub_dirs[self.log_dir_type],
-                             dec_log_dir=self.info.sub_dirs[self.log_dir_type],
+                             enc_log_dir=self.info.sub_dirs[self.encoder_cfg.log_dir_type],
+                             dec_log_dir=self.info.sub_dirs[self.decoder_cfg.log_dir_type],
                              seqs=seq_names,
                              qps=qps,
                              mode=self.info.mode,
