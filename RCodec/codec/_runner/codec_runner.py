@@ -384,10 +384,12 @@ class Codec(object):
                 merger_cmd = None
 
             # 构建解码命令及拷贝解码文件至管理节点的命令
-            if self.info.gen_bin and self.info.gen_dec:
-                decode = self.info.get_name(name_qp, None,
-                                            prefix=self.info.prefixes[ConfigKey.PREFIX_DECODE], suffix="yuv")
-                decode = path_join(decode, self.info.temp_dir)
+            if self.info.gen_bin and self.decoder:
+                decode = os.devnull
+                if self.info.gen_dec:
+                    decode = self.info.get_name(name_qp, None,
+                                                prefix=self.info.prefixes[ConfigKey.PREFIX_DECODE], suffix="yuv")
+                    decode = path_join(decode, self.info.temp_dir)
                 encode_params = {
                     ParamType.DecodeYUV: decode,
                     ParamType.InBitStream: bitstream
@@ -594,8 +596,8 @@ class Codec(object):
         :param who: 使用者
         :param email: 使用者邮箱
         :param gen_bin: 是否生成码流
-        :param gen_rec: 是否生成重构
-        :param gen_dec: 是否解码
+        :param gen_rec: 是否生成重构YUV
+        :param gen_dec: 是否生成解码YUV
         :param par_enc: 是否并行编码
         :param qp_list: QP测点
         :param seq_info: 序列信息列表
