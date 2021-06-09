@@ -17,6 +17,7 @@ class JobState(Enum):
 
 
 class JobManager(object):
+    SCHEDULER_EXE = ""
     cmd_set = dict()
     state_set = dict()
     task_id_set = dict()
@@ -46,7 +47,6 @@ class JobManager(object):
         depend = kwargs.get("depend")
         name = kwargs.get("name")
         cmd = command.format(**kwargs)
-        # print("000", job_id, cmd)
         JobManager.cmd_set[job_id].append([task_id, name, cmd, workdir, stdout, stderr, depend])
         JobManager.task_id_set[job_id] = task_id
         return True
@@ -55,7 +55,8 @@ class JobManager(object):
     def run_cmd(cmd_set):
         success = True
         for _, name, cmd, workdir, stdout, stderr, depend in cmd_set:
-            success = run_cmd(cmd, workdir=workdir, stdout=stdout, stderr=stderr) and success
+            success = run_cmd(JobManager.SCHEDULER_EXE + " " + cmd,
+                              workdir=workdir, stdout=stdout, stderr=stderr) and success
         return success
 
     @staticmethod
@@ -217,4 +218,3 @@ class HpcJobManager(object):
             return False
         cmd = f"{HpcJobConfig.HPC_EXE} modify {job_id} {HpcJobManager._filter_and_concat_params(HpcJobManager.JOB_MODIFY_ARGS, kwargs)}"
         return run_cmd(cmd)
-
