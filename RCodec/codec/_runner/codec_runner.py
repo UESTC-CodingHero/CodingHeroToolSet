@@ -49,13 +49,13 @@ class _PrepareInfo(object):
         from codec.manifest import SupportedCodec
         self.temp_dir = getattr(SupportedCodec, ConfigKey.TMP_DIR, tempfile.gettempdir())
 
-        if self.is_cluster:
+        if self.is_cluster and HpcJobConfig.HPC_SCHEDULER:
             self.cur_dir = rf"\\{HpcJobConfig.HPC_SCHEDULER}\{os.path.abspath(os.curdir).replace(':', '')}"
         else:
             self.cur_dir = os.path.abspath(os.curdir)
 
         if self.is_cluster:
-            self.work_dir = rf"{self.cur_dir}\{mode.value}"
+            self.work_dir = rf"{path_join(mode.value, self.cur_dir)}"
         else:
             self.work_dir = str(mode.value)
 
@@ -231,7 +231,6 @@ class Codec(object):
                     value = param_exe.param_key[k]
                 patterns = re.findall(r"{\d+}", value)
                 n = len(set(patterns))
-                print(cmd, value, v, type(value), type(v))
                 if isinstance(v, str) or isinstance(v, float) or isinstance(v, int):
                     assert n == 1
                     cmd = f"{cmd} {value.format(v)}"
@@ -506,6 +505,8 @@ class Codec(object):
                                                  self.encoder_cfg.pattern[PatKey.Line_Psnr_Y],
                                                  track_file)
                 self.info.progress_backend.notice(job_info)
+        else:
+            print(name_qp, "Failed")
         return job_id
 
     def collect_log(self, seq_names: list, qps: list, anchor: bool,

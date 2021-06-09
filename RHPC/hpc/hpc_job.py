@@ -4,6 +4,8 @@ from enum import Enum
 
 from .helper import run_cmd
 
+_DEBUG_EXE = "echo"
+
 
 class JobState(Enum):
     Configuring = "Configuring"
@@ -85,7 +87,7 @@ class JobManager(object):
 
 class HpcJobConfig(object):
     HPC_EXE = "job"
-    HPC_SCHEDULER = "DellServer" if not os.getenv("CCP_SCHEDULER") else os.getenv("CCP_SCHEDULER")
+    HPC_SCHEDULER = os.getenv("CCP_SCHEDULER")
 
     def __init__(self, cores=2, nodes=None, groups="E2680", priority=2000):
         self.cores = cores
@@ -140,7 +142,7 @@ class HpcJobManager(object):
         判断当前平台是否有HPC集群环境，判断依据为当前平台上有 “job”命令
         :return:
         """
-        return os.system(f"where {HpcJobConfig.HPC_EXE} > nul 2>&1") == 0
+        return os.system(f"where {HpcJobConfig.HPC_EXE} > nul 2>&1") == 0 or HpcJobConfig.HPC_EXE == _DEBUG_EXE
 
     @staticmethod
     def _filter_and_concat_params(kd, kwargs):
@@ -176,7 +178,7 @@ class HpcJobManager(object):
             try:
                 return int(text.split()[3]), True
             except ValueError as _:
-                return 0, False
+                return 0, False or HpcJobConfig.HPC_EXE == _DEBUG_EXE
 
         cmd = f"{HpcJobConfig.HPC_EXE} new {HpcJobManager._filter_and_concat_params(HpcJobManager.JOB_NEW_ARGS, kwargs)}"
 
