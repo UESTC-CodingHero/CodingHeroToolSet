@@ -11,6 +11,7 @@
 最终，将Record保存到指定的文件中或者输出到屏幕
 
 """
+import copy
 import os
 import re
 import sys
@@ -75,13 +76,15 @@ class LogScanner(object):
             return None, None, None
         return _id, self.seqs[_id], file
 
-    def _scan_log(self, log_dir: str, log_file: str, key_set: Sequence[type(PatKey.Summary_Psnr_Y)],
+    @staticmethod
+    def _scan_log(log_dir: str, log_file: str,
+                  patterns: Dict[str, str], key_set: Sequence[type(PatKey.Summary_Psnr_Y)],
                   record: Record) -> Record:
         with open(os.path.join(log_dir, log_file)) as fp:
             for line in fp:
                 line = line.strip()
                 for key in key_set:
-                    m = re.match(self.codec.pattern[key], line)
+                    m = re.match(patterns[key], line)
                     if m:
                         record[key] = m.group(key)
         return record
@@ -105,7 +108,7 @@ class LogScanner(object):
             key_set += PatKey.line_patterns()
         if _ScanType.SUM in scan_type:
             key_set += PatKey.summary_patterns()
-        record = self._scan_log(self.enc_log_dir, enc_file, key_set, record)
+        record = self._scan_log(self.enc_log_dir, enc_file, self.codec.encoder_cfg.pattern, key_set, record)
         return record
 
     def _scan_dec_log(self, dec_file: Optional[str]) -> Optional[Record]:
@@ -120,112 +123,100 @@ class LogScanner(object):
         record = Record(_id, self.mode, name)
         record.qp = int(file.split("_")[-1].split(".")[0])
         key_set = PatKey.summary_patterns_dec()
-        record = self._scan_log(self.dec_log_dir, dec_file, key_set, record)
+        record = self._scan_log(self.dec_log_dir, dec_file, self.codec.decoder_cfg.pattern, key_set, record)
         return record
 
-    def scan(self,
-             filter_func_enc: Optional[Callable[[str], bool]] = None,
-             filter_func_dec: Optional[Callable[[str], bool]] = None):
+    def scan(self, enc_prefix, enc_suffix, dec_prefix, dec_suffix):
         """
         执行扫描任务。从给定的文件夹中，挑选指定的文件进行解析
-        :param filter_func_enc: 过滤掉不关心的编码日志文件
-        :param filter_func_dec: 过滤掉不关心的解码日志文件
+        :param encode_prefix_suffix: 过滤掉不关心的编码日志文件
+        :param dec_prefix_suffix: 过滤掉不关心的解码日志文件
         :return: 字典。key为所在序列的ID，value为当前序列对应的不同QP下的Record列表
         """
-        enc_files = os.listdir(self.enc_log_dir)
-        if filter_func_enc:
-            enc_files = list(filter(filter_func_enc, enc_files))
-
-        dec_files = os.listdir(self.dec_log_dir)
-        if filter_func_dec:
-            dec_files = list(filter(filter_func_dec, dec_files))
-
-        # 为了zip，在没有解码日志的情况下，后面的代码也能正常work
-        if len(dec_files) != len(enc_files):
-            dec_files = [None] * len(enc_files)
+        enc_files = dict()
+        all_in_enc_dir = os.listdir(self.enc_log_dir)
+        all_in_dec_dir = os.listdir(self.dec_log_dir)
+        for seq in self.seqs:
+            for qp in self.qps:
+                enc_files[f"{seq}_{qp}"] = list(filter(lambda fn: str(fn).startswith(enc_prefix)
+                                                                  and str(fn).endswith(enc_suffix)
+                                                                  and seq in fn and str(qp) in fn,
+                                                       all_in_enc_dir))
 
         # 如果是 separate 模式，log文件名格式为 prefix_name_wxh_fps_qp_idx.xxx
-        # 如果非 separate 模式，log文件名格式为 prefix_name_wxh_fps_qp.xxx
-        if self.is_separate:
-            for _id, seq in enumerate(self.seqs):
-                cur_seq_log_files = [f for f in enc_files if seq in f]
-                # key is qp, value is file list
-                temp_dict = dict()
-                for file in cur_seq_log_files:
-                    qp = int(file.split("_")[-2])
-                    qp_files = temp_dict.get(qp) or list()
-                    qp_files.append(file)
-                    temp_dict[qp] = qp_files
+        # 如果非 separate
+        # 模式，log文件名格式为 prefix_name_wxh_fps_qp.xxx
+        for key, enc_file in enc_files.items():
+            if self.is_separate:
+                join = os.path.join
+                records = [self._scan_enc_log(join(self.enc_log_dir, f), scan_type=_ScanType.BOT) for f in enc_file]
 
-                for qp, files in temp_dict.items():
-                    # 根据每个子片段的序号排序,
-                    files.sort(key=lambda fn: int(str(fn).split("_")[-1].split(".")[0]))
+                record = copy.copy(records[0])
+                # 对于PSNR的计算，将每个子流log的平均PSNR乘以帧数，求和后再减去非第一个子流的首帧的PSNR,时间也是类似的
+                # 求和
+                fps = int(enc_file[0].split("_")[-3])
+                frames = 0
+                for i, record_temp in enumerate(records):
+                    # @formatter:off
+                    for (key_summary, key_line) in [zip(PatKey.summary_psnr_patters(), PatKey.line_psnr_patters())]:
+                        record[key_summary] += record_temp[key_summary] * len(record_temp[key_line])
+                    record[PatKey.Summary_Encode_Time] += record_temp[PatKey.Summary_Encode_Time]
+                    frames += len(record_temp[PatKey.Line_Psnr_Y])
+                    # @formatter:on
 
-                    record = Record(_id, self.mode, seq)
-                    record.qp = qp
+                # 减去首帧的PSNR和时间
+                for i, record_temp in enumerate(records):
+                    if i != 0:
+                        frames -= 1
+                        for (key_summary, key_line) in [
+                            zip(PatKey.summary_psnr_patters() + [PatKey.Summary_Encode_Time],
+                                PatKey.line_psnr_patters() + [PatKey.Line_Time])]:
+                            assert isinstance(record_temp[key_line], Record.Container)
+                            record[key_summary] = record[key_summary] - record_temp[key_line][0]
 
-                    join = os.path.join
-                    records = [self._scan_enc_log(join(self.enc_log_dir, f), scan_type=_ScanType.BOT) for f in files]
+                # 对 PSNR 取平均
+                for key_summary in [PatKey.Summary_Psnr_Y, PatKey.Summary_Psnr_U, PatKey.Summary_Psnr_V]:
+                    record[key_summary] = record[key_summary] / frames
 
-                    # 对于PSNR的计算，将每个子流log的平均PSNR乘以帧数，求和后再减去非第一个子流的首帧的PSNR,时间也是类似的
-                    # 求和
-                    fps = int(files[0].split("_")[-3])
-                    frames = 0
-                    for i, record_temp in enumerate(records):
-                        # @formatter:off
-                        for (key_summary, key_line) in [zip(PatKey.summary_psnr_patters(), PatKey.line_psnr_patters())]:
-                            record[key_summary] += record_temp[key_summary] * len(record_temp[key_line])
-                        record[PatKey.Summary_Encode_Time] += record_temp[PatKey.Summary_Encode_Time]
-                        frames += len(record_temp[PatKey.Line_Psnr_Y])
-                        # @formatter:on
+                # 计算bitrate
+                # 读取拼接码流的文件大小, 拼接码流文件名格式: a_prefix_name_wxh_fps_qp.suffix
+                bitstream_dir = self.codec.info.sub_dirs[ConfigKey.BIN_DIR]
+                temp = os.listdir(bitstream_dir)
+                temp = list(filter(lambda fn: seq in fn and str(qp) in fn and fn.endswith(self.codec.encoder_cfg.suffix), temp))
+                if len(temp) == 1:
+                    fd = path_join(temp[0], bitstream_dir)
+                    # in bytes
+                    record.bits = os.stat(fd).st_size
 
-                    # 减去首帧的PSNR和时间
-                    for i, record_temp in enumerate(records):
-                        if i != 0:
-                            frames -= 1
-                            for (key_summary, key_line) in [
-                                zip(PatKey.summary_psnr_patters() + [PatKey.Summary_Encode_Time],
-                                    PatKey.line_psnr_patters() + [PatKey.Line_Time])]:
-                                assert isinstance(record_temp[key_line], Record.Container)
-                                record[key_summary] = record[key_summary] - record_temp[key_line][0]
+                    # FIXME: HPM需要减掉以下2个部分，其他编码器未知。。。
+                    if self.codec.name.upper() == "HPM":
+                        # video end code
+                        record.bits -= 4
+                        # md5
+                        record.bits -= frames * 23
 
-                    # 对 PSNR 取平均
-                    for key_summary in [PatKey.Summary_Psnr_Y, PatKey.Summary_Psnr_U, PatKey.Summary_Psnr_V]:
-                        record[key_summary] = record[key_summary] / frames
+                    # to bits
+                    record.bits <<= 3
 
-                    # 计算bitrate
-                    # 读取拼接码流的文件大小, 拼接码流文件名格式: a_prefix_name_wxh_fps_qp.suffix
-                    bitstream_dir = self.codec.info.sub_dirs[ConfigKey.BIN_DIR]
-                    temp = os.listdir(bitstream_dir)
-                    temp = list(filter(lambda fn: seq in fn and str(qp) in fn and fn.endswith(self.codec.suffix), temp))
-                    if len(temp) == 1:
-                        fd = path_join(temp[0], bitstream_dir)
-                        # in bytes
-                        record.bits = os.stat(fd).st_size
-
-                        # FIXME: HPM需要减掉以下2个部分，其他编码器未知。。。
-                        if self.codec.name.upper() == "HPM":
-                            # video end code
-                            record.bits -= 4
-                            # md5
-                            record.bits -= frames * 23
-
-                        # to bits
-                        record.bits <<= 3
-
-                        record.bitrate = fps * record.bits / frames / 1000
-                    self._add_record(record)
-        else:
-            for enc_file, dec_file in zip(enc_files, dec_files):
+                    record.bitrate = fps * record.bits / frames / 1000
+            else:
+                assert len(enc_file) == 1
+                enc_file = enc_file[0]
                 _id = ExcelHelper.seq_id(self.seqs, enc_file)
                 if _id is None:
                     continue
                 record = self._scan_enc_log(enc_file, scan_type=_ScanType.SUM)
+            dec_file = list(filter(lambda fn: str(fn).startswith(dec_prefix)
+                                              and str(fn).endswith(dec_suffix)
+                                              and key in fn,
+                                   all_in_dec_dir))
+            if len(dec_file) == 1:
+                dec_file = dec_file[0]
                 record_dec = self._scan_dec_log(dec_file)
                 if record_dec is not None:
                     assert record_dec.id == record.id and record.qp == record_dec.qp
                     record[PatKey.Summary_Decode_Time] = record_dec[PatKey.Summary_Decode_Time]
-                self._add_record(record)
+            self._add_record(record)
         self.records = dict(sorted(self.records.items(), key=lambda kv: kv[0]))
         return self.records
 
