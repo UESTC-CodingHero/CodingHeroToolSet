@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Optional, Dict
 
-from ..common import PatKey, ConfigKey
+from ..common import PatKey, ConfigKey, ParamType
 
 _DEFAULT_DICT = dict()
 _DEFAULT_SUF = ""
@@ -32,7 +32,7 @@ class Merger(ParamExe):
 
 class Encoder(ParamExe):
     def __init__(self, name: str,
-                 param_key: Optional[dict] = None,
+                 param_key: Optional[Dict[ParamType, str]] = None,
                  suffix: str = _DEFAULT_SUF,
                  log_dir_type: str = _DEFAULT_DIR,
                  p_log_line: str = _DEFAULT_PAT,

@@ -1,9 +1,10 @@
 import copy
 import os
 import sys
+import re
 import tempfile
 from enum import Enum
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Sequence
 from concurrent.futures import ProcessPoolExecutor, wait
 
 from hpc.helper import mkdir, rmdir, path_join, get_hash
@@ -22,10 +23,16 @@ class _Prefix(Enum):
     """
     ENCODE = "encode"
     COPY_REC = "cp_rec"
+    DEL_REC = "del_rec"
+    REN_REC = "ren_rec"
     MERGE = "merger"
     DECODE = "decode"
     COPY_DEC = "cp_dec"
+    DEL_DEC = "del_dec"
+    REN_DEC = "ren_dec"
     COPY_BIN = "cp_bin"
+    DEL_BIN = "del_bin"
+    REN_BIN = "ren_bin"
 
 
 class _PrepareInfo(object):
@@ -67,13 +74,10 @@ class _PrepareInfo(object):
                          ConfigKey.STDOUT_DIR,
                          ConfigKey.STDERR_DIR]:
             self.sub_dirs[dir_type] = getattr(SupportedCodec, dir_type, default(dir_type))
-            if not os.path.isabs(self.sub_dirs[dir_type]):
-                self.sub_dirs[dir_type] = path_join(self.sub_dirs[dir_type], self.work_dir)
 
         self.prefixes: Dict[str, str] = dict()
         for key in [ConfigKey.PREFIX_ENCODE, ConfigKey.PREFIX_DECODE]:
             self.prefixes[key] = getattr(SupportedCodec, key, default(key))
-
         self.suffixes: Dict[str, str] = dict()
         for key in [ConfigKey.SUFFIX_STDOUT, ConfigKey.SUFFIX_STDERR]:
             self.suffixes[key] = getattr(SupportedCodec, key, default(key))
@@ -136,12 +140,6 @@ class _PrepareInfo(object):
         else:
             idx = ""
         return f"{prefix}{file_name}{idx}.{suffix}"
-
-
-_DEFAULT_DICT = dict()
-_DEFAULT_SUF = ""
-_DEFAULT_DIR = ConfigKey.STDOUT_DIR
-_DEFAULT_PAT = ".+"
 
 
 class Codec(object):
@@ -208,7 +206,7 @@ class Codec(object):
 
             因为拼接的时候是按照{key}{value}格式拼接的
 
-        特别地，如果某个参数不存在值，应该传入空字符串作为其值，而不应该传入None，否在该参数将被忽略
+        特别地，如果某个参数不存在值，应该传入空字符串作为其值，而不应该传入None，否则该参数将被忽略
 
         例如FFMPEG中的-psnr，应为{"-psnr":""}
 
@@ -217,20 +215,32 @@ class Codec(object):
         :return: 拼接后的字符串
         """
         cmd = ""
-        for k, v in param.items():
-            if v is None:
-                continue
-            if isinstance(v, list) or isinstance(v, tuple):
-                for vv in v:
-                    if param_exe.param_key.get(k) is not None:
-                        cmd = f"{cmd} {param_exe.param_key[k]}{vv}"
-                    elif v:
-                        cmd = f"{cmd} {vv}"
-            else:
-                if param_exe.param_key.get(k) is not None:
-                    cmd = f"{cmd} {param_exe.param_key[k]}{v}"
-                elif v:
-                    cmd = f"{cmd} {v}"
+        for k, value in param_exe.param_key.items():
+            if k in param:
+                v = param[k]
+                if value is None or v is None:
+                    continue
+                # not contains "{}" or "{0}" or such a formatter
+                patterns = re.findall(r"{}", value)
+                if len(patterns) > 0:
+                    print("请使用位置参数, 形如 {0}")
+                    exit(-1)
+                patterns = re.findall(r"{\d+}", value)
+                if len(patterns) == 0:
+                    param_exe.param_key[k] = param_exe.param_key[k] + "{0}"
+                    value = param_exe.param_key[k]
+                patterns = re.findall(r"{\d+}", value)
+                n = len(set(patterns))
+                print(cmd, value, v, type(value), type(v))
+                if isinstance(v, str) or isinstance(v, float) or isinstance(v, int):
+                    assert n == 1
+                    cmd = f"{cmd} {value.format(v)}"
+                elif len(v) == n and isinstance(v, Sequence):
+                    cmd = f"{cmd} {value.format(*v)}"
+                elif isinstance(v, Sequence):
+                    for vv in v:
+                        if param_exe.param_key.get(k) is not None:
+                            cmd = f"{cmd} {value.format(vv)}"
         return cmd
 
     @staticmethod
@@ -293,7 +303,13 @@ class Codec(object):
                 frames_list.append(frames)
 
             copy_bin_cmd_list = list()
+            del_bin_cmd_list = list()
+            ren_bin_cmd_list = list()
+
             copy_rec_cmd_list = list()
+            del_rec_cmd_list = list()
+            ren_rec_cmd_list = list()
+
             encoder_cmd_list = list()
             bitstream_list = list()
 
@@ -306,28 +322,28 @@ class Codec(object):
                     # FIXME: 升级服务器到Windows Server 2012，这样可以指定运行在同一个节点
                     if self.info.par_enc:
                         file_name = path_join(file_name, self.info.sub_dirs[key])
-                        cmd = None
+                        cp_cmd, del_cmd, ren_cmd = None, None, None
                     else:
                         file_name = path_join(file_name, self.info.temp_dir)
-                        cmd = copy_del_rename(file_name,
-                                              self.info.sub_dirs[key],
-                                              None,
-                                              local=not self.info.is_cluster)
-                    return file_name, cmd
+                        cp_cmd, del_cmd, ren_cmd = copy_del_rename(file_name, self.info.sub_dirs[key], None)
+                    return file_name, cp_cmd, del_cmd, ren_cmd
                 else:
-                    return os.devnull, None
+                    return os.devnull, None, None, None
 
             # 逐个片设置编码命令、拷贝重构和码流的命令
             for idx in range(rcs):
                 # 设置输出码流名字及拷贝码流的命令
-                bitstream, copy_bin_cmd = get_name_cmd(self.info.gen_bin,
-                                                       ConfigKey.BIN_DIR,
-                                                       idx, None, self.encoder_cfg.suffix)
+                bitstream, copy_bin_cmd, del_bin_cmd, ren_bin_cmd = get_name_cmd(self.info.gen_bin,
+                                                                                 ConfigKey.BIN_DIR,
+                                                                                 idx, None, self.encoder_cfg.suffix)
 
                 # 设置重构的名字及拷贝重构的命令
-                reconstruction, copy_rec_cmd = get_name_cmd(self.info.gen_rec,
-                                                            ConfigKey.REC_DIR,
-                                                            idx, self.info.prefixes[ConfigKey.PREFIX_ENCODE], "yuv")
+                reconstruction, copy_rec_cmd, del_rec_cmd, ren_rec_cmd = \
+                    get_name_cmd(self.info.gen_rec,
+                                 ConfigKey.REC_DIR,
+                                 idx,
+                                 self.info.prefixes[ConfigKey.PREFIX_ENCODE],
+                                 "yuv")
 
                 # 设置编码命令
                 encode_params = {
@@ -337,6 +353,7 @@ class Codec(object):
                     ParamType.Sequence: path_join(s_name + '.yuv', seq_dir),
                     ParamType.Width: width,
                     ParamType.Height: height,
+                    ParamType.Size: (width, height),
                     ParamType.Fps: fps,
                     ParamType.BitDepth: bit_depth,
                     ParamType.Frames: frames_list[idx],
@@ -352,7 +369,13 @@ class Codec(object):
 
                 # 保存这些命令
                 copy_bin_cmd_list.append(copy_bin_cmd)
+                del_bin_cmd_list.append(del_bin_cmd)
+                ren_bin_cmd_list.append(ren_bin_cmd)
+
                 copy_rec_cmd_list.append(copy_rec_cmd)
+                del_rec_cmd_list.append(del_rec_cmd)
+                ren_rec_cmd_list.append(ren_rec_cmd)
+
                 encoder_cmd_list.append(encoder_cmd)
 
                 # 保存码流文件名，以便后续拼接(如果存在拼接任务)
@@ -384,29 +407,33 @@ class Codec(object):
                     ParamType.InBitStream: bitstream
                 }
                 decoder_cmd = f"{self.decoder_exe} {self._concat_command(decode_params, self.decoder_cfg)}"
-                if self.info.par_enc:
-                    copy_dec_cmd = None
+                if self.info.par_enc or decode == os.devnull:
+                    copy_dec_cmd, del_dec_cmd, ren_dec_cmd = None, None, None
                 else:
-                    copy_dec_cmd = copy_del_rename(decode, self.info.sub_dirs[ConfigKey.DEC_DIR], None,
-                                                   local=not self.info.is_cluster)
+                    copy_dec_cmd, del_dec_cmd, ren_dec_cmd = copy_del_rename(decode,
+                                                                             self.info.sub_dirs[ConfigKey.DEC_DIR],
+                                                                             None)
             else:
                 decoder_cmd = None
-                copy_dec_cmd = None
+                copy_dec_cmd, del_dec_cmd, ren_dec_cmd = None, None, None
 
             depend = []
             # encode copy_rec merge decode copy_dec copy_bin
-            commands = [encoder_cmd_list, copy_rec_cmd_list, merger_cmd, decoder_cmd, copy_dec_cmd, copy_bin_cmd_list]
+            commands = [encoder_cmd_list, copy_rec_cmd_list, del_rec_cmd_list, ren_rec_cmd_list,
+                        merger_cmd,
+                        decoder_cmd, copy_dec_cmd, del_dec_cmd, ren_dec_cmd,
+                        copy_bin_cmd_list, del_bin_cmd_list, ren_bin_cmd_list]
 
             def unimportant_prefix(p):
                 if isinstance(p, str):
                     p = _Prefix(p)
-                return p in [_Prefix.COPY_REC, _Prefix.MERGE, _Prefix.COPY_DEC, _Prefix.COPY_BIN]
+                return p not in [_Prefix.ENCODE, _Prefix.DECODE]
 
             for i, (prefix, cmd) in enumerate(zip([key for key in _Prefix], commands)):
-                prefix = prefix.value
-                prefix_key = ConfigKey.PREFIX_ENCODE if prefix == _Prefix.ENCODE else ConfigKey.PREFIX_DECODE
                 if cmd is None:
                     continue
+                prefix_key = ConfigKey.PREFIX_ENCODE if prefix == _Prefix.ENCODE else ConfigKey.PREFIX_DECODE
+                prefix = prefix.value
                 if isinstance(cmd, str) and len(cmd) > 0:
                     if unimportant_prefix(prefix):
                         stdout = None
@@ -498,9 +525,15 @@ class Codec(object):
                              mode=self.info.mode,
                              is_separate=self.info.par_enc)
         try:
-            records = scanner.scan(
-                filter_func_enc=lambda fn: str(fn).startswith(self.info.prefixes[ConfigKey.PREFIX_ENCODE]),
-                filter_func_dec=lambda fn: str(fn).startswith(self.info.prefixes[ConfigKey.PREFIX_DECODE]))
+            enc_prefix = self.info.prefixes[ConfigKey.PREFIX_ENCODE]
+            enc_suffix = self.info.suffixes[ConfigKey.SUFFIX_STDOUT]
+            if self.encoder_cfg.log_dir_type == ConfigKey.STDERR_DIR:
+                enc_suffix = self.info.suffixes[ConfigKey.SUFFIX_STDERR]
+            dec_prefix = self.info.prefixes[ConfigKey.PREFIX_ENCODE]
+            dec_suffix = self.info.suffixes[ConfigKey.SUFFIX_STDOUT]
+            if self.decoder_cfg.log_dir_type == ConfigKey.STDERR_DIR:
+                dec_suffix = self.info.suffixes[ConfigKey.SUFFIX_STDERR]
+            records = scanner.scan(enc_prefix, enc_suffix, dec_prefix, dec_suffix)
             if logger_type == LoggerOutputType.STDOUT:
                 scanner.output(filename=sys.stdout, is_anchor=anchor)
             elif logger_type == LoggerOutputType.STDERR:

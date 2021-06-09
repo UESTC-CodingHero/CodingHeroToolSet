@@ -33,6 +33,7 @@ class ParamType(object):
     Sequence = "sequence"
     Width = "width"
     Height = "height"
+    Size = "size"
     Fps = "fps"
     BitDepth = "bit_depth"
     QP = "qp"
