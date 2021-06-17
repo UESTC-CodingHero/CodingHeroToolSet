@@ -1,9 +1,9 @@
 import logging
 import os
 from threading import Lock, Condition
-from typing import Union
+from typing import Optional
 
-from hpc.helper import mkdir, path_join
+from hpc.helper import mkdir, path_join, run_cmd
 from hpc.hpc_job import HpcJobManager, JobState
 
 from progress.lib.handler import ProgressManager, Callback, ProgressServerJobInfo
@@ -19,9 +19,10 @@ class _HpcProgressCallback(Callback):
         self.lock = Lock()
         self.cond = Condition(self.lock)
 
-    def on_state_change(self, state: JobState, job_info: ProgressServerJobInfo, *args):
+    def on_state_change(self, state: JobState, job_info: Optional[ProgressServerJobInfo], *args):
         def default():
-            logging.info(f"{job_info.job_id} {state.value}")
+            if job_info is not None:
+                logging.info(f"{job_info.job_id} {state.value}")
             with self.lock:
                 self.cond.notify_all()
 
@@ -50,6 +51,10 @@ class _HpcProgressCallback(Callback):
 
 
 def main():
+    exe_name = "progress_server.exe"
+    if exe_name in run_cmd(f'tasklist /FI "PID ne {os.getppid()}"', fetch_console=True):
+        logging.error(f"{exe_name} is already running...")
+        exit(-1)
     logging.info("Start Server...")
     try:
         p = os.path.expanduser("~")

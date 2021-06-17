@@ -238,6 +238,7 @@ class ProgressManager(Socket, Cache):
                 client_socket, _ = self.socket.accept()
                 self.executor.submit(self._handler, client_socket)
             except socket.error or KeyboardInterrupt:
+                self.executor.shutdown()
                 self.callback.on_state_change(JobState.Unknown, job_info=None)
                 break
 
