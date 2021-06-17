@@ -24,7 +24,7 @@ Codec(
             ParamType.OutBitStream: None,
             ParamType.OutReconstruction: None,
 
-            ParamType.ExtraParam: None
+            ParamType.ExtraParam: "",
         },
         suffix="temp",  # 生成的码流后缀
         log_dir_type=ConfigKey.STDOUT_DIR,  # 编解码日志的目录
@@ -42,7 +42,7 @@ Codec(
         param_key={  # 该字典定义了编码器、解码器、码流拼接器的命令行参数
             ParamType.InBitStream: None,
             ParamType.DecodeYUV: None,
-            ParamType.ExtraParam: None
+            ParamType.ExtraParam: "",
         },
         log_dir_type=ConfigKey.STDOUT_DIR,  # 编解码日志的目录
         p_summary_decode_time=rf"(?P<{PatKey.Summary_Decode_Time}>\d+\.\d+)",
@@ -52,7 +52,7 @@ Codec(
         param_key={  # 该字典定义了编码器、解码器、码流拼接器的命令行参数
             ParamType.MergeInBitStream: None,
             ParamType.MergeOutBitStream: None,
-            ParamType.ExtraParam: None
+            ParamType.ExtraParam: "",
         },
     )
 

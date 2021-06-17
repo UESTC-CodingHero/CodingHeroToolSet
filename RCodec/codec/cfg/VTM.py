@@ -22,7 +22,7 @@ Codec(
             ParamType.OutBitStream: "-b ",
             ParamType.OutReconstruction: "-o ",
 
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         "h266",
         ConfigKey.STDOUT_DIR,
@@ -39,7 +39,7 @@ Codec(
             ParamType.InBitStream: "-b ",
             ParamType.DecodeYUV: "-o ",
 
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         ConfigKey.STDOUT_DIR,
         rf"\s*Total Time:\s+(?P<{PatKey.Summary_Decode_Time}>\d+\.\d+) sec.+",

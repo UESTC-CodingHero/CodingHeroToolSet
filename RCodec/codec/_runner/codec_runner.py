@@ -41,7 +41,7 @@ class _PrepareInfo(object):
     """
 
     def __init__(self, mode: Mode, who: str, email: str,
-                 gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool):
+                 gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool, max_workers: int = os.cpu_count() >> 1):
         self.mode = mode
 
         self.is_cluster = HpcJobManager.check_env()
@@ -105,7 +105,7 @@ class _PrepareInfo(object):
         else:
             self.progress_backend = None
             self.manager = JobManager
-            self.executor = ProcessPoolExecutor(max_workers=max(4, os.cpu_count() >> 1))
+            self.executor = ProcessPoolExecutor(max_workers=max_workers) if max_workers > 1 else None
         self.tasks = list()
 
     def ensure_dirs(self):
@@ -180,12 +180,13 @@ class Codec(object):
         return ""
 
     def prepare(self, encoder, decoder, merger, mode: Mode, who: str, email: str, hashcode: bool,
-                gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool):
+                gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool, max_workers=os.cpu_count() >> 1):
         self.encoder_exe = encoder
         self.decoder_exe = decoder
         self.merger_exe = merger
         self.info = _PrepareInfo(mode=mode, who=who, email=email,
-                                 gen_bin=gen_bin, gen_rec=gen_rec, gen_dec=gen_dec, par_enc=par_enc)
+                                 gen_bin=gen_bin, gen_rec=gen_rec, gen_dec=gen_dec, par_enc=par_enc,
+                                 max_workers=max_workers)
         if hashcode:
             try:
                 seed = self._check(self.encoder_exe)
@@ -519,8 +520,10 @@ class Codec(object):
         from .._logger.scanner import LogScanner
         from .._logger.excel_handler import ExcelHelper
         scanner = LogScanner(codec=self,
-                             enc_log_dir=self.info.sub_dirs[self.encoder_cfg.log_dir_type],
-                             dec_log_dir=self.info.sub_dirs[self.decoder_cfg.log_dir_type],
+                             enc_log_dir=path_join(self.info.sub_dirs[self.encoder_cfg.log_dir_type],
+                                                   self.info.work_dir),
+                             dec_log_dir=path_join(self.info.sub_dirs[self.decoder_cfg.log_dir_type],
+                                                   self.info.work_dir),
                              seqs=seq_names,
                              qps=qps,
                              mode=self.info.mode,
@@ -580,7 +583,7 @@ class Codec(object):
             prompt += title
             prompt += "\n"
             for i, menu in zip(codes, menus):
-                prompt += f"\t[{i}] {menu}"
+                prompt += f"  [{i}] {menu}"
                 prompt += "\n"
             prompt += f"请选择[默认：{default}]: "
             try:
@@ -607,7 +610,8 @@ class Codec(object):
            gen_bin: bool, gen_rec: bool, gen_dec: bool, par_enc: bool,
            qp_list: List[int], seq_info: List[List],
            cores: int, nodes: Optional[str], groups: str, priority: int,
-           cfg: str, cfg_seq: Optional[Dict[str, str]], extra_param: Optional[str], with_hash: bool = True):
+           cfg: str, cfg_seq: Optional[Dict[str, str]], extra_param: Optional[str],
+           with_hash: bool = True, max_workers: int = 4):
         """
         此函数仅仅是为了方便外部脚本一次性将全部参数传入，直接调用，而无需过多的代码。
 
@@ -631,12 +635,13 @@ class Codec(object):
         :param cfg_seq: 各个序列的配置文件
         :param extra_param: 额外传递给编码器的参数
         :param with_hash: HPC任务名中是否显示hash
+        :param max_workers: 本地任务中最大并行数
         """
         if cfg_seq is None:
             cfg_seq = dict()
         self.prepare(encoder=encoder, decoder=decoder, merger=merger,
                      mode=mode, who=who, email=email, hashcode=with_hash,
-                     gen_bin=gen_bin, gen_dec=gen_dec, gen_rec=gen_rec, par_enc=par_enc)
+                     gen_bin=gen_bin, gen_dec=gen_dec, gen_rec=gen_rec, par_enc=par_enc, max_workers=max_workers)
         choice = self.get_choice()
         if choice == TaskType.EXIT:
             exit(0)

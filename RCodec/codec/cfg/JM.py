@@ -22,7 +22,7 @@ Codec(
             ParamType.OutBitStream: "-p OutputFile=",
             ParamType.OutReconstruction: "-p ReconFile=",
 
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         "h264",
         ConfigKey.STDOUT_DIR,
@@ -39,7 +39,7 @@ Codec(
             ParamType.InBitStream: "-p InputFile=",
             ParamType.DecodeYUV: "-p OutputFile=",
 
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         ConfigKey.STDOUT_DIR,
         rf"\s*Total Time:\s+(?P<{PatKey.Summary_Decode_Time}>\d+\.\d+) sec.+",

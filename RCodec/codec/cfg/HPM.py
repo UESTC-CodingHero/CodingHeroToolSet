@@ -22,7 +22,7 @@ Codec(
             ParamType.OutBitStream: "-o ",
             ParamType.OutReconstruction: "-r ",
 
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         "avs3",
         ConfigKey.STDOUT_DIR,
@@ -38,7 +38,7 @@ Codec(
         {
             ParamType.InBitStream: "-i ",
             ParamType.DecodeYUV: "-o ",
-            ParamType.ExtraParam: None,
+            ParamType.ExtraParam: "",
         },
         ConfigKey.STDOUT_DIR,
         rf"total decoding time\s+=\s*\d+\s*msec, (?P<{PatKey.Summary_Decode_Time}>\d+\.\d+) sec",
