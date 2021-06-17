@@ -152,7 +152,7 @@ class ExcelHelper(object):
                 # fill in the sheet
                 row = ExcelHelper._row_offset_in_raw_data_sheet(mode=record.mode, seqs=seqs, qps=qps,
                                                                 seq=record.name, qp=record.qp)
-                for col, key in enumerate(PatKey.summary_patterns() + PatKey.summary_patterns_dec()):
+                for col, key in enumerate(PatKey.summary_patterns_enc() + PatKey.summary_patterns_dec()):
                     sheet.cell(row, column=col + col_start, value=record[key])
 
     @staticmethod
@@ -207,7 +207,7 @@ class ExcelHelper(object):
         # 在当前sheet中的行偏移值
         row_start = row = 3
         col_start = column_index_from_string(_RAW_DATA_COL[1])
-        cols = len(PatKey.summary_patterns() + PatKey.summary_patterns_dec())
+        cols = len(PatKey.summary_patterns_enc() + PatKey.summary_patterns_dec())
         for seq_id, seq in enumerate(seqs):
             for qp_index, qp in enumerate(qps):
                 if qp_index == 0:

@@ -69,7 +69,7 @@ class PatKey(object):
     Summary_Decode_Time = "sdt"
 
     @staticmethod
-    def line_patterns():
+    def line_patterns_enc():
         return [
             PatKey.Line_Psnr_Y,
             PatKey.Line_Psnr_U,
@@ -80,6 +80,10 @@ class PatKey(object):
 
     @staticmethod
     def summary_patterns():
+        return PatKey.summary_patterns_enc() + PatKey.summary_patterns_dec()
+
+    @staticmethod
+    def summary_patterns_enc():
         return [
             PatKey.Summary_Bitrate,
             PatKey.Summary_Psnr_Y,
@@ -94,11 +98,11 @@ class PatKey(object):
 
     @staticmethod
     def line_psnr_patters():
-        return PatKey.line_patterns[0:3]
+        return PatKey.line_patterns_enc()[0:3]
 
     @staticmethod
     def summary_psnr_patters():
-        return PatKey.summary_patterns[1:4]
+        return PatKey.summary_patterns_enc()[1:4]
 
 
 class ConfigKey(object):

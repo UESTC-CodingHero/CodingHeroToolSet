@@ -1,4 +1,3 @@
-from typing import Sequence
 from ..common import Mode, PatKey
 
 
@@ -21,7 +20,7 @@ class Record(dict):
         PatKey.Summary_Encode_Time  : (float, None),
         PatKey.Summary_Decode_Time  : (float, None)
     }
-    INVALID = 0
+    DEFAULT = 0
     # @formatter:on
 
     def __init__(self, _id: int, mode: Mode, name: str):
@@ -35,22 +34,21 @@ class Record(dict):
         self.id = _id
         self.mode = mode
         self.name = name
-        self.qp = Record.INVALID
+        self.qp = Record.DEFAULT
 
     def __setitem__(self, key, value):
         data_type, container = Record._data_type[key]
-        if value != Record.INVALID:
-            value = data_type(value)
+        value = data_type(value)
         if container is None:
             super(Record, self).__setitem__(key, value)
         else:
-            if not isinstance(value, Sequence):
+            if not isinstance(value, type(container)):
                 value = [value]
             values = (self.get(key) or container()) + container(value)
             super(Record, self).__setitem__(key, values)
 
     def __getitem__(self, key):
-        return self.get(key) if self.get(key) else Record.INVALID
+        return self.get(key) if self.get(key) else Record.DEFAULT
 
     def __str__(self):
         values = [self.name, str(self.qp)]

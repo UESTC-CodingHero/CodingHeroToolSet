@@ -105,9 +105,9 @@ class LogScanner(object):
             record.qp = int(file.split("_")[-1].split(".")[0])
         key_set = list()
         if _ScanType.LIN in scan_type:
-            key_set += PatKey.line_patterns()
+            key_set += PatKey.line_patterns_enc()
         if _ScanType.SUM in scan_type:
-            key_set += PatKey.summary_patterns()
+            key_set += PatKey.summary_patterns_enc()
         record = self._scan_log(self.enc_log_dir, enc_file, self.codec.encoder_cfg.pattern, key_set, record)
         return record
 
@@ -129,8 +129,10 @@ class LogScanner(object):
     def scan(self, enc_prefix, enc_suffix, dec_prefix, dec_suffix):
         """
         执行扫描任务。从给定的文件夹中，挑选指定的文件进行解析
-        :param encode_prefix_suffix: 过滤掉不关心的编码日志文件
-        :param dec_prefix_suffix: 过滤掉不关心的解码日志文件
+        :param enc_prefix: 过滤掉不关心的编码日志文件
+        :param enc_suffix: 过滤掉不关心的编码日志文件
+        :param dec_prefix: 过滤掉不关心的解码日志文件
+        :param dec_suffix: 过滤掉不关心的解码日志文件
         :return: 字典。key为所在序列的ID，value为当前序列对应的不同QP下的Record列表
         """
         enc_files = dict()
@@ -172,33 +174,34 @@ class LogScanner(object):
                             zip(PatKey.summary_psnr_patters() + [PatKey.Summary_Encode_Time],
                                 PatKey.line_psnr_patters() + [PatKey.Line_Time])]:
                             assert isinstance(record_temp[key_line], Record.Container)
-                            record[key_summary] = record[key_summary] - record_temp[key_line][0]
+                            record[key_summary] -= record_temp[key_line][0]
 
                 # 对 PSNR 取平均
-                for key_summary in [PatKey.Summary_Psnr_Y, PatKey.Summary_Psnr_U, PatKey.Summary_Psnr_V]:
+                for key_summary in PatKey.summary_psnr_patters():
                     record[key_summary] = record[key_summary] / frames
 
                 # 计算bitrate
                 # 读取拼接码流的文件大小, 拼接码流文件名格式: a_prefix_name_wxh_fps_qp.suffix
                 bitstream_dir = self.codec.info.sub_dirs[ConfigKey.BIN_DIR]
                 temp = os.listdir(bitstream_dir)
-                temp = list(filter(lambda fn: seq in fn and str(qp) in fn and fn.endswith(self.codec.encoder_cfg.suffix), temp))
+                temp = list(
+                    filter(lambda fn: seq in fn and str(qp) in fn and fn.endswith(self.codec.encoder_cfg.suffix), temp))
                 if len(temp) == 1:
                     fd = path_join(temp[0], bitstream_dir)
                     # in bytes
-                    record.bits = os.stat(fd).st_size
+                    bits = os.stat(fd).st_size
 
                     # FIXME: HPM需要减掉以下2个部分，其他编码器未知。。。
                     if self.codec.name.upper() == "HPM":
                         # video end code
-                        record.bits -= 4
+                        bits -= 4
                         # md5
-                        record.bits -= frames * 23
+                        bits -= frames * 23
 
                     # to bits
-                    record.bits <<= 3
+                    bits <<= 3
 
-                    record.bitrate = fps * record.bits / frames / 1000
+                    record[PatKey.Summary_Bitrate] = fps * bits / frames / 1000
             else:
                 assert len(enc_file) == 1
                 enc_file = enc_file[0]
